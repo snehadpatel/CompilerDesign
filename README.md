@@ -1,66 +1,74 @@
 # Python to C Converter
 
-This project is a custom compiler tool designed to translate a subset of Python source code into semantically equivalent C code. It was developed to meet the requirements of Compiler Design Lab.
+This is a custom transpiler I built for my Compiler Design Lab. It translates a subset of Python code into C code. It doesn't use any external parsing libraries, just a custom lexer and recursive descent parser.
 
-## Features Supported
+## What it can do:
+- **Print and Inputs**: Translates `print()` to `printf()` and `input()` to `scanf()`.
+- **Formatting**: Automatically converts Python's indentation into proper C `{ }` blocks.
+- **Loops & Conditionals**: Supports `if`, `elif`, `else`, `while`, and `for` loops (using `range`).
+- **Functions**: Handles `def` with parameters and `return`.
+- **Lists**: Basic fixed-size arrays, indexing, and an `.append()` equivalent using dynamic length tracking.
+- **Built-in functions**: Has custom mapping for `len()`, `ord()`, and `chr()`.
 
-The current implementation acts as a transpiler, successfully handling the following Python constructs:
-- **I/O Operations**: Translates `print()` to `printf()` and integer/string `input()` to `scanf()`.
-- **Indentation & Blocks**: Accurately tracks Python's indentation-based scoping and automatically generates C-style `{ }` block delimiters.
-- **Control Flow**: Supports `if`, `elif`, `else` conditionals and `while` loop constructions.
-- **For Loops**: Converts Python's `for i in range(start, end, step)` into standard C `for (int i = start; i < end; i += step)` loops.
-- **Functions**: Handles function definitions (`def`) with parameter processing and `return` statements.
-- **Lists (Arrays)**: Supports basic list initialization, element accessing via indexing (`list[i]`), and simulated appending using length tracking.
-- **Code Beautification**: The generated output maintains proper C styling, managing consistent indentation and newline separations for readability.
-- **Header Injection**: Automatically injects required C headers (`<stdio.h>`, `<stdlib.h>`, `<string.h>`).
+## Files
+- `src/lexer.c` & `lexer.h`: Tokenizer that handles the indentation tracking.
+- `src/parser.c` & `parser.h`: The main recursive descent logic and code generation.
+- `src/codegen.c` & `codegen.h`: Output file formatting logic.
+- `src/main.c`: Opens the file and starts the parser.
+- `tests/`: A few example python scripts I used for testing.
+- `Makefile`: To build the project.
 
-## Prerequisites
+## How to run it
 
-- GCC (GNU Compiler Collection) or Clang
-- Make
+First, make sure you have GCC and Make installed.
+If you're on Mac/Linux, you probably already have them or can get them via xcode tools.
+If you're on Windows, you can use WSL or install MinGW.
 
-## Project Structure
+**1. Build the compiler:**
 
-- `src/` - Contains the source code for the transpiler
-  - `lexer.c` & `lexer.h` - Tokenization and indentation tracking
-  - `parser.c` & `parser.h` - Syntactic analysis and code generation logic
-  - `codegen.c` & `codegen.h` - Output file formatting and writing utilities
-  - `main.c` - Entry point and file reading handler
-- `tests/` - Example Python scripts (`test_simple.py`, `test_loops.py`, `test_lists.py`)
-- `Makefile` - Build configuration
-
-## How to Build
-
-To compile the transpiler executable, simply run the following command in the root of the project directory:
-
+If you are on Mac/Linux (or WSL):
 ```bash
 make
 ```
 
-To clean the build files:
-
-```bash
-make clean
+If you are using MinGW natively on Windows:
+```cmd
+mingw32-make
 ```
 
-## How to Use
+**2. Run it:**
 
-Once compiled, execute the generated `py2c` binary, passing the target Python source script as an argument:
+Just pass a python file to the generated executable:
 
+Mac/Linux/WSL:
 ```bash
 ./py2c tests/test_simple.py
 ```
 
-The tool will process the script and generate a corresponding C file named `output.c` in the `outputs/` directory. You can then view or compile this output file:
+Windows CMD:
+```cmd
+py2c.exe tests\test_simple.py
+```
 
+This will parse the Python code and generate an equivalent C file in the `outputs/` folder (named `outputs/output.c`).
+
+**3. Compile the output C code:**
+
+You can then compile the generated C code and run it normally:
+
+Mac/Linux:
 ```bash
-cat outputs/output.c
 gcc outputs/output.c -o my_c_program
 ./my_c_program
 ```
 
-## Known Limitations
+Windows CMD:
+```cmd
+gcc outputs\output.c -o my_c_program.exe
+my_c_program.exe
+```
 
-- Types are inferred basically; numerical variables default to `int`.
-- Advanced list operations (like slicing or complex multi-type elements) are unsupported.
-- Error handling is basic; deeply malformed Python syntax may cause parsing errors.
+## Limitations
+- Only infers simple types, everything mostly defaults to `int`.
+- Advanced list operations like slicing won't work.
+- It's a lab assignment, so error handling for really broken Python code is pretty barebones.
