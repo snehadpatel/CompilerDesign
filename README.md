@@ -7,8 +7,10 @@ This is a custom transpiler I built for my Compiler Design Lab. It translates a 
 - **Formatting**: Automatically converts Python's indentation into proper C `{ }` blocks.
 - **Loops & Conditionals**: Supports `if`, `elif`, `else`, `while`, and `for` loops (using `range`).
 - **Functions**: Handles `def` with parameters and `return`.
-- **Lists**: Basic fixed-size arrays, indexing, and an `.append()` equivalent using dynamic length tracking.
+- **Advanced Lists**: Translates primitive fixed-size arrays, indexing, `.append()` with dynamic length trackers, and even evaluates bounded **array slicing** (`list[0:2]`) natively as replicated inline `for` loops.
+- **Type Inference**: Scans variable assignment tokens to natively extrapolate unstructured variables into explicit `int`, `float`, and `char*` C variables!
 - **Built-in functions**: Has custom mapping for `len()`, `ord()`, and `chr()`.
+- **Error Safety**: Features comprehensive Syntax match error-halting that kills bad transpilation scripts natively by printing exact tokens and crash lines.
 
 ## Files
 - `src/lexer.c` & `lexer.h`: Tokenizer that handles the indentation tracking.
@@ -69,6 +71,4 @@ my_c_program.exe
 ```
 
 ## Limitations
-- Only infers simple types, everything mostly defaults to `int`.
-- Advanced list operations like slicing won't work.
-- It's a lab assignment, so error handling for really broken Python code is pretty barebones.
+- Only covers the sub-set of Python procedures mapped inside out parser (e.g. dictionaries, objects, classes, and external library imports are universally unsupported in this lab requirement constraints).

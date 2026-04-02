@@ -3,7 +3,7 @@
 #include <string.h>
 
 int main() {
-    int message = "Hello, Compiler Lab";
+    char* message = "Hello, Compiler Lab";
     printf("%d\n", message);
     int length = message_len;
     printf("%d\n", length);

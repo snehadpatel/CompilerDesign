@@ -7,7 +7,7 @@ int main() {
     int my_list_len = 3;
     int n = my_list_len;
     printf("%d\n", n);
-    int c = 'A';
+    char* c = 'A';
     int val = (int)(c);
     printf("%d\n", val);
     int ch = (char)(66);
