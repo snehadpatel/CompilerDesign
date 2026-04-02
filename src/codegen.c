@@ -10,9 +10,9 @@ static char headers[10][64];
 static int header_count = 0;
 
 void codegen_init() {
-    out_file = fopen("output.c", "w");
+    out_file = fopen("outputs/output.c", "w");
     if (!out_file) {
-        perror("Failed to open output.c");
+        perror("Failed to open outputs/output.c");
         exit(1);
     }
     header_count = 0;
