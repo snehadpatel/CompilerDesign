@@ -51,11 +51,11 @@ Once compiled, execute the generated `py2c` binary, passing the target Python so
 ./py2c tests/test_simple.py
 ```
 
-The tool will process the script and generate a corresponding C file named `output.c` in the same directory. You can then view or compile this output file:
+The tool will process the script and generate a corresponding C file named `output.c` in the `outputs/` directory. You can then view or compile this output file:
 
 ```bash
-cat output.c
-gcc output.c -o my_c_program
+cat outputs/output.c
+gcc outputs/output.c -o my_c_program
 ./my_c_program
 ```
 
