@@ -43,6 +43,12 @@ static void match(TokenType type) {
 
 static void parse_expression(char *buf, int stop_at_comma);
 
+static int current_indent = 0;
+
+static void codegen_indent_internal() {
+    for (int i = 0; i < current_indent; i++) codegen_write("    ");
+}
+
 static void parse_print() {
     match(TOKEN_KEYWORD); // print
     match(TOKEN_LPAREN);
@@ -68,29 +74,27 @@ static void parse_input(const char *var_name) {
             match(TOKEN_KEYWORD); // input
             match(TOKEN_LPAREN);
             if (current_token.type == TOKEN_STRING) {
-                codegen_write("printf(\"%%s\", %s); ", current_token.text);
+                codegen_write("\n"); codegen_indent_internal();
+                codegen_write("printf(\"%%s\", %s);", current_token.text);
                 advance_token();
             }
             match(TOKEN_RPAREN);
         }
         match(TOKEN_RPAREN);
+        codegen_write("\n"); codegen_indent_internal();
         codegen_write("scanf(\"%%d\", &%s);", var_name);
     } else if (strcmp(current_token.text, "input") == 0) {
         match(TOKEN_KEYWORD); // input
         match(TOKEN_LPAREN);
         if (current_token.type == TOKEN_STRING) {
-            codegen_write("printf(\"%%s\", %s); ", current_token.text);
+            codegen_write("\n"); codegen_indent_internal();
+            codegen_write("printf(\"%%s\", %s);", current_token.text);
             advance_token();
         }
         match(TOKEN_RPAREN);
+        codegen_write("\n"); codegen_indent_internal();
         codegen_write("scanf(\"%%s\", %s);", var_name);
     }
-}
-
-static int current_indent = 0;
-
-static void codegen_indent_internal() {
-    for (int i = 0; i < current_indent; i++) codegen_write("    ");
 }
 
 static void parse_expression(char *buf, int stop_at_comma) {
@@ -329,6 +333,16 @@ static void parse_statement() {
             codegen_write("if (");
             char cond[128] = {0}; parse_expression(cond, 0);
             codegen_write("%s)", cond);
+            parse_block();
+        } else if (strcmp(current_token.text, "elif") == 0) {
+            match(TOKEN_KEYWORD);
+            codegen_write("else if (");
+            char cond[128] = {0}; parse_expression(cond, 0);
+            codegen_write("%s)", cond);
+            parse_block();
+        } else if (strcmp(current_token.text, "else") == 0) {
+            match(TOKEN_KEYWORD);
+            codegen_write("else");
             parse_block();
         } else if (strcmp(current_token.text, "while") == 0) {
             if (!main_started) { codegen_write("int main() {"); codegen_newline(); main_started = 1; current_indent++; codegen_indent_internal(); }

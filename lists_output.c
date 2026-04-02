@@ -3,7 +3,8 @@
 #include <string.h>
 
 int main() {
-    int my_list[100] = {10, 20, 30}; int my_list_len = 3;
+    int my_list[100] = {10, 20, 30};
+    int my_list_len = 3;
     printf("%d\n", my_list);
     my_list[my_list_len++] = 40;
     printf("%d\n", my_list);
