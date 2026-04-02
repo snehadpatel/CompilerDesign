@@ -120,9 +120,10 @@ static void parse_expression(char *buf, int stop_at_comma) {
                 advance_token();
             }
         } else if (current_token.type == TOKEN_IDENTIFIER) {
-            strcat(buf, current_token.text);
+            char name[64]; strcpy(name, current_token.text);
             advance_token();
             if (current_token.type == TOKEN_LBRACKET) { // INDEXING
+                strcat(buf, name);
                 strcat(buf, "[");
                 advance_token();
                 parse_expression(buf, 0);
@@ -131,13 +132,37 @@ static void parse_expression(char *buf, int stop_at_comma) {
                     advance_token();
                 }
             } else if (current_token.type == TOKEN_LPAREN) { // CALL
-                strcat(buf, "(");
-                advance_token();
-                parse_expression(buf, 0);
-                if (current_token.type == TOKEN_RPAREN) {
+                if (strcmp(name, "len") == 0) {
+                    advance_token(); // (
+                    char arg[64] = {0};
+                    parse_expression(arg, 0);
+                    if (current_token.type == TOKEN_RPAREN) advance_token(); // )
+                    strcat(buf, arg);
+                    strcat(buf, "_len"); // list_len
+                } else if (strcmp(name, "ord") == 0) {
+                    advance_token(); // (
+                    strcat(buf, "(int)(");
+                    parse_expression(buf, 0);
+                    if (current_token.type == TOKEN_RPAREN) advance_token(); // )
                     strcat(buf, ")");
+                } else if (strcmp(name, "chr") == 0) {
+                    advance_token(); // (
+                    strcat(buf, "(char)(");
+                    parse_expression(buf, 0);
+                    if (current_token.type == TOKEN_RPAREN) advance_token(); // )
+                    strcat(buf, ")");
+                } else {
+                    strcat(buf, name);
+                    strcat(buf, "(");
                     advance_token();
+                    parse_expression(buf, 0);
+                    if (current_token.type == TOKEN_RPAREN) {
+                        strcat(buf, ")");
+                        advance_token();
+                    }
                 }
+            } else {
+                strcat(buf, name);
             }
         } else {
             strcat(buf, current_token.text);
@@ -226,12 +251,17 @@ static void parse_block() {
                     match(TOKEN_LBRACKET);
                     if (!is_declared(name)) { codegen_write("int %s[100] = {", name); add_symbol(name); }
                     else codegen_write("%s = {", name);
+                    int elem_count = 0;
                     while (current_token.type != TOKEN_RBRACKET) {
                         codegen_write("%s", current_token.text); advance_token();
+                        elem_count++;
                         if (current_token.type == TOKEN_COMMA) { advance_token(); codegen_write(", "); }
                     }
                     match(TOKEN_RBRACKET);
-                    codegen_write("}; int %s_len = 3;", name);
+                    codegen_write("};");
+                    codegen_newline();
+                    codegen_indent_internal();
+                    codegen_write("int %s_len = %d;", name, elem_count);
                 } else {
                     char expr[128] = {0}; parse_expression(expr, 0);
                     if (!is_declared(name)) { codegen_write("int %s = %s;", name, expr); add_symbol(name); }
@@ -335,11 +365,17 @@ static void parse_statement() {
                 match(TOKEN_LBRACKET);
                 if (!is_declared(name)) { codegen_write("int %s[100] = {", name); add_symbol(name); }
                 else codegen_write("%s = {", name);
+                int elem_count = 0;
                 while (current_token.type != TOKEN_RBRACKET) {
                     codegen_write("%s", current_token.text); advance_token();
+                    elem_count++;
                     if (current_token.type == TOKEN_COMMA) { advance_token(); codegen_write(", "); }
                 }
-                match(TOKEN_RBRACKET); codegen_write("}; int %s_len = 3;", name);
+                match(TOKEN_RBRACKET); 
+                codegen_write("};");
+                codegen_newline();
+                codegen_indent_internal();
+                codegen_write("int %s_len = %d;", name, elem_count);
             } else {
                 char expr[128] = {0}; parse_expression(expr, 0);
                 if (!is_declared(name)) { codegen_write("int %s = %s;", name, expr); add_symbol(name); }
