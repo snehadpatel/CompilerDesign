@@ -1,74 +1,51 @@
-# Python to C Converter
+# Python-to-C Transpilation System
 
-This is a custom transpiler I built for my Compiler Design Lab. It translates a subset of Python code into C code. It doesn't use any external parsing libraries, just a custom lexer and recursive descent parser.
+A robust, dependency-free Python-to-C transpiler developed for the Compiler Design Laboratory. This system implements a full compilation pipeline—from a custom Lexical Analyzer to a Recursive Descent Parser—without the use of external tools like Flex or Bison.
 
-## What it can do:
-- **Print and Inputs**: Translates `print()` to `printf()` and `input()` to `scanf()`.
-- **Formatting**: Automatically converts Python's indentation into proper C `{ }` blocks.
-- **Loops & Conditionals**: Supports `if`, `elif`, `else`, `while`, and `for` loops (using `range`).
-- **Functions**: Handles `def` with parameters and `return`.
-- **Advanced Lists**: Translates primitive fixed-size arrays, indexing, `.append()` with dynamic length trackers, and even evaluates bounded **array slicing** (`list[0:2]`) natively as replicated inline `for` loops.
-- **Type Inference**: Scans variable assignment tokens to natively extrapolate unstructured variables into explicit `int`, `float`, and `char*` C variables!
-- **Built-in functions**: Has custom mapping for `len()`, `ord()`, and `chr()`.
-- **Error Safety**: Features comprehensive Syntax match error-halting that kills bad transpilation scripts natively by printing exact tokens and crash lines.
+## Technical Architecture
 
-## Files
-- `src/lexer.c` & `lexer.h`: Tokenizer that handles the indentation tracking.
-- `src/parser.c` & `parser.h`: The main recursive descent logic and code generation.
-- `src/codegen.c` & `codegen.h`: Output file formatting logic.
-- `src/main.c`: Opens the file and starts the parser.
-- `tests/`: A few example python scripts I used for testing.
-- `Makefile`: To build the project.
+### 1. Lexical Analysis (Scanner)
+The Lexer handles the transformation of raw source code into a stream of tokens. A key technical achievement is the **Indentation Tracker**, which uses a stack-based approach to convert Python's whitespace-based scoping into standard C `TOKEN_INDENT` and `TOKEN_DEDENT` markers.
 
-## How to run it
+### 2. Syntax Analysis (Parser)
+The Parser uses a **Recursive Descent** strategy to validate the token stream against a Python-subset grammar. It performs:
+- **Type Inference**: Analyzes assignments to dynamically determine C variable types (`int`, `float`, `char*`).
+- **Two-Pass Symbol Scanning**: A preliminary pass identifies module imports and variable declarations to ensure safe header inclusion and scope management.
 
-First, make sure you have GCC and Make installed.
-If you're on Mac/Linux, you probably already have them or can get them via xcode tools.
-If you're on Windows, you can use WSL or install MinGW.
+### 3. Code Generation
+The system generates optimized C code that bridges Pythonic abstractions with C-native performance:
+- **Array Slicing**: Implemented via replicated inline loops for memory safety.
+- **Iterative Printing**: Custom logic to format Python iterables into bracketed C sequences.
+- **Memory Optimization**: Minimal header inclusion using conditional detection logic.
 
-**1. Build the compiler:**
+## Key Features
+- **Conditional Header Inclusion**: Only includes `<math.h>` or `<string.h>` when explicitly required.
+- **Built-in Primitive Support**: Native mapping for `len()`, `ord()`, and `chr()`.
+- **Compound Boolean Logic**: High-fidelity mapping of `and`, `or`, and `not` keywords.
+- **Fixed-Size Dynamic Arrays**: Support for list-append operations with static length tracking.
 
-If you are on Mac/Linux (or WSL):
+## Build and Execution
+
+### Build System
+The project is managed via a standard Makefile. To build the transpiler:
 ```bash
 make
 ```
 
-If you are using MinGW natively on Windows:
-```cmd
-mingw32-make
-```
-
-**2. Run it:**
-
-Just pass a python file to the generated executable:
-
-Mac/Linux/WSL:
+### Conversion Pipeline
+To translate a Python source file to C:
 ```bash
 ./py2c tests/test_simple.py
 ```
+Outputs are generated in the `outputs/` directory.
 
-Windows CMD:
-```cmd
-py2c.exe tests\test_simple.py
-```
-
-This will parse the Python code and generate an equivalent C file in the `outputs/` folder (named `outputs/output.c`).
-
-**3. Compile the output C code:**
-
-You can then compile the generated C code and run it normally:
-
-Mac/Linux:
+### Native Compilation
+Compile the generated C output using GCC:
 ```bash
-gcc outputs/output.c -o my_c_program
-./my_c_program
+gcc outputs/simple_output.c -o system_bin
+./system_bin
 ```
 
-Windows CMD:
-```cmd
-gcc outputs\output.c -o my_c_program.exe
-my_c_program.exe
-```
-
-## Limitations
-- Only covers the sub-set of Python procedures mapped inside out parser (e.g. dictionaries, objects, classes, and external library imports are universally unsupported in this lab requirement constraints).
+---
+**Course:** Compiler Design Laboratory  
+**Scope:** Python-to-C Transpilation System
