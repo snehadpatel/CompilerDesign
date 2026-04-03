@@ -105,7 +105,19 @@ static int func_has_float_param(const char *func_name) {
     for (int i = 0; i < func_call_param_types_count; i++) {
         if (strcmp(func_call_param_types[i].func_name, func_name) == 0) {
             for (int j = 0; j < func_call_param_types[i].param_count; j++) {
-                if (strcmp(func_call_param_types[i].param_types[j], "float") == 0) return 1;
+                if (strcmp(func_call_param_types[i].param_types[j], "float") == 0 ||
+                    strcmp(func_call_param_types[i].param_types[j], "double") == 0) return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int func_has_double_param(const char *func_name) {
+    for (int i = 0; i < func_call_param_types_count; i++) {
+        if (strcmp(func_call_param_types[i].func_name, func_name) == 0) {
+            for (int j = 0; j < func_call_param_types[i].param_count; j++) {
+                if (strcmp(func_call_param_types[i].param_types[j], "double") == 0) return 1;
             }
         }
     }
@@ -357,9 +369,13 @@ static void parse_expression(char *buf, int stop_at_comma) {
                             strcat(buf, ")");
                             advance_token();
                         }
-                        // If the called function returns float, propagate
-                        if (func_has_float_param(name) && func_has_return(name))
-                            last_expr_is_float = 1;
+                        // If the called function returns a floating-point type, propagate
+                        if (func_has_return(name)) {
+                            if (func_has_double_param(name))
+                                last_expr_is_double = 1;
+                            if (func_has_float_param(name))
+                                last_expr_is_float = 1;
+                        }
                     }
                 } else {
                     strcat(buf, name);
@@ -563,10 +579,12 @@ static void parse_statement() {
             match(TOKEN_KEYWORD);
             char name[64]; strcpy(name, current_token.text); match(TOKEN_IDENTIFIER);
             match(TOKEN_LPAREN);
-            // Determine return type: float if any parameter is float, else int (or void)
+            // Determine return type based on parameter types (double > float > int, or void)
             const char *ret_type;
             if (func_has_return(name)) {
-                ret_type = func_has_float_param(name) ? "float" : "int";
+                if (func_has_double_param(name)) ret_type = "double";
+                else if (func_has_float_param(name)) ret_type = "float";
+                else ret_type = "int";
             } else {
                 ret_type = "void";
             }
