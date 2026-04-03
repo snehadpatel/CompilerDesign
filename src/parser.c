@@ -23,6 +23,18 @@ static struct Symbol {
     char type[32];
 } symbols[100];
 
+// Track which variables have len() called on them
+#define MAX_LEN_VARS 100
+static char len_needed_vars[MAX_LEN_VARS][64];
+static int len_needed_count = 0;
+
+static int needs_len_var(const char *name) {
+    for (int i = 0; i < len_needed_count; i++) {
+        if (strcmp(len_needed_vars[i], name) == 0) return 1;
+    }
+    return 0;
+}
+
 void parser_init() {
     symbol_count = 0;
     main_started = 0;
@@ -31,6 +43,7 @@ void parser_init() {
     current_indent = 0;
     is_slice = 0;
     last_expr_is_float = 0;
+    len_needed_count = 0;
 }
 
 static void add_symbol(const char *name, const char *type) {
@@ -393,8 +406,13 @@ static void parse_block() {
                         codegen_write("for (int i = 0; i < %s_len; i++) { %s[i] = %s[(%s) + i]; }", name, name, slice_arr, slice_start);
                     } else if (strcmp(inferred_type, "char*") == 0) {
                         int str_len_val = strlen(expr) > 2 ? strlen(expr) - 2 : 0;
-                        if (!is_declared(name)) { codegen_write("%s %s = %s;", inferred_type, name, expr); add_symbol(name, inferred_type); codegen_newline(); codegen_indent_internal(); codegen_write("int %s_len = %d;", name, str_len_val); }
-                        else codegen_write("%s = %s; %s_len = %d;", name, expr, name, str_len_val);
+                        if (!is_declared(name)) {
+                            codegen_write("%s %s = %s;", inferred_type, name, expr); add_symbol(name, inferred_type);
+                            if (needs_len_var(name)) { codegen_newline(); codegen_indent_internal(); codegen_write("int %s_len = %d;", name, str_len_val); }
+                        } else {
+                            if (needs_len_var(name)) codegen_write("%s = %s; %s_len = %d;", name, expr, name, str_len_val);
+                            else codegen_write("%s = %s;", name, expr);
+                        }
                     } else {
                         if (!is_declared(name)) { codegen_write("%s %s = %s;", inferred_type, name, expr); add_symbol(name, inferred_type); }
                         else codegen_write("%s = %s;", name, expr);
@@ -545,8 +563,13 @@ static void parse_statement() {
                     codegen_write("for (int i = 0; i < %s_len; i++) { %s[i] = %s[(%s) + i]; }", name, name, slice_arr, slice_start);
                 } else if (strcmp(inferred_type, "char*") == 0) {
                     int str_len_val = strlen(expr) > 2 ? strlen(expr) - 2 : 0;
-                    if (!is_declared(name)) { codegen_write("%s %s = %s;", inferred_type, name, expr); add_symbol(name, inferred_type); codegen_newline(); codegen_indent_internal(); codegen_write("int %s_len = %d;", name, str_len_val); }
-                    else codegen_write("%s = %s; %s_len = %d;", name, expr, name, str_len_val);
+                    if (!is_declared(name)) {
+                        codegen_write("%s %s = %s;", inferred_type, name, expr); add_symbol(name, inferred_type);
+                        if (needs_len_var(name)) { codegen_newline(); codegen_indent_internal(); codegen_write("int %s_len = %d;", name, str_len_val); }
+                    } else {
+                        if (needs_len_var(name)) codegen_write("%s = %s; %s_len = %d;", name, expr, name, str_len_val);
+                        else codegen_write("%s = %s;", name, expr);
+                    }
                 } else {
                     if (!is_declared(name)) { codegen_write("%s %s = %s;", inferred_type, name, expr); add_symbol(name, inferred_type); }
                     else codegen_write("%s = %s;", name, expr);
@@ -587,13 +610,39 @@ static void pre_scan_imports(const char *source) {
         }
         t = lexer_next_token();
     }
+}
+
+static void pre_scan_len_usage(const char *source) {
     lexer_init(source);
-    advance_token(); 
+    Token t = lexer_next_token();
+    while (t.type != TOKEN_EOF) {
+        if (t.type == TOKEN_IDENTIFIER && strcmp(t.text, "len") == 0) {
+            Token next = lexer_next_token();
+            if (next.type == TOKEN_LPAREN) {
+                Token arg = lexer_next_token();
+                if (arg.type == TOKEN_IDENTIFIER && len_needed_count < MAX_LEN_VARS) {
+                    int already = 0;
+                    for (int i = 0; i < len_needed_count; i++) {
+                        if (strcmp(len_needed_vars[i], arg.text) == 0) { already = 1; break; }
+                    }
+                    if (!already) strcpy(len_needed_vars[len_needed_count++], arg.text);
+                }
+                t = lexer_next_token();
+            } else {
+                t = next;
+            }
+            continue;
+        }
+        t = lexer_next_token();
+    }
 }
 
 void parser_run(const char *source) {
     parser_init();
     pre_scan_imports(source);
+    pre_scan_len_usage(source);
+    lexer_init(source);
+    advance_token();
     
     codegen_init();
     
