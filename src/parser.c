@@ -13,6 +13,7 @@ static int symbol_count = 0;
 static int current_indent = 0;
 static int is_slice = 0;
 static int last_expr_is_float = 0;
+static int last_expr_is_double = 0;
 static char slice_arr[64] = {0};
 static char slice_start[64] = {0};
 static char slice_end[64] = {0};
@@ -50,6 +51,79 @@ static int func_has_return(const char *name) {
     return 0;
 }
 
+// Pre-scanned variable type table (populated from literal assignments before main parse)
+static struct PreVar {
+    char name[64];
+    char type[32];
+} pre_vars[200];
+static int pre_var_count = 0;
+
+static void add_pre_var(const char *name, const char *type) {
+    for (int i = 0; i < pre_var_count; i++) {
+        if (strcmp(pre_vars[i].name, name) == 0) {
+            strcpy(pre_vars[i].type, type);
+            return;
+        }
+    }
+    if (pre_var_count < 200) {
+        strncpy(pre_vars[pre_var_count].name, name, sizeof(pre_vars[0].name) - 1);
+        pre_vars[pre_var_count].name[sizeof(pre_vars[0].name) - 1] = '\0';
+        strncpy(pre_vars[pre_var_count].type, type, sizeof(pre_vars[0].type) - 1);
+        pre_vars[pre_var_count].type[sizeof(pre_vars[0].type) - 1] = '\0';
+        pre_var_count++;
+    }
+}
+
+static const char* get_pre_var_type(const char *name) {
+    for (int i = 0; i < pre_var_count; i++) {
+        if (strcmp(pre_vars[i].name, name) == 0) return pre_vars[i].type;
+    }
+    return "int";
+}
+
+// Function parameter types inferred from call sites
+#define MAX_PARAMS 10
+static struct FuncCallParamTypes {
+    char func_name[64];
+    char param_types[MAX_PARAMS][32];
+    int param_count;
+} func_call_param_types[MAX_FUNCS];
+static int func_call_param_types_count = 0;
+
+static const char* get_func_param_type(const char *func_name, int param_idx) {
+    for (int i = 0; i < func_call_param_types_count; i++) {
+        if (strcmp(func_call_param_types[i].func_name, func_name) == 0) {
+            if (param_idx < func_call_param_types[i].param_count) {
+                return func_call_param_types[i].param_types[param_idx];
+            }
+        }
+    }
+    return "int";
+}
+
+static int func_has_float_param(const char *func_name) {
+    for (int i = 0; i < func_call_param_types_count; i++) {
+        if (strcmp(func_call_param_types[i].func_name, func_name) == 0) {
+            for (int j = 0; j < func_call_param_types[i].param_count; j++) {
+                if (strcmp(func_call_param_types[i].param_types[j], "float") == 0 ||
+                    strcmp(func_call_param_types[i].param_types[j], "double") == 0) return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int func_has_double_param(const char *func_name) {
+    for (int i = 0; i < func_call_param_types_count; i++) {
+        if (strcmp(func_call_param_types[i].func_name, func_name) == 0) {
+            for (int j = 0; j < func_call_param_types[i].param_count; j++) {
+                if (strcmp(func_call_param_types[i].param_types[j], "double") == 0) return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 void parser_init() {
     symbol_count = 0;
     main_started = 0;
@@ -58,8 +132,11 @@ void parser_init() {
     current_indent = 0;
     is_slice = 0;
     last_expr_is_float = 0;
+    last_expr_is_double = 0;
     len_needed_count = 0;
     func_info_count = 0;
+    pre_var_count = 0;
+    func_call_param_types_count = 0;
 }
 
 static void add_symbol(const char *name, const char *type) {
@@ -183,6 +260,7 @@ static void parse_input(const char *var_name) {
 
 static void parse_expression(char *buf, int stop_at_comma) {
     last_expr_is_float = 0;
+    last_expr_is_double = 0;
     while (current_token.type == TOKEN_NUMBER || current_token.type == TOKEN_IDENTIFIER || 
            current_token.type == TOKEN_STRING || current_token.type == TOKEN_LPAREN || 
            current_token.type == TOKEN_KEYWORD || current_token.type == TOKEN_OPERATOR) {
@@ -216,8 +294,10 @@ static void parse_expression(char *buf, int stop_at_comma) {
             strcat(buf, "(");
             advance_token();
             int saved_is_float = last_expr_is_float;
+            int saved_is_double = last_expr_is_double;
             parse_expression(buf, 0);
             if (saved_is_float) last_expr_is_float = 1;
+            if (saved_is_double) last_expr_is_double = 1;
             if (current_token.type == TOKEN_RPAREN) {
                 strcat(buf, ")");
                 advance_token();
@@ -229,7 +309,10 @@ static void parse_expression(char *buf, int stop_at_comma) {
                 if (current_token.type == TOKEN_OPERATOR && current_token.text[0] == '.') {
                     advance_token(); // skip '.'
                     strcat(buf, current_token.text);
-                    if (strcmp(current_token.text, "sqrt") == 0 || strcmp(current_token.text, "pow") == 0) last_expr_is_float = 1;
+                    if (strcmp(current_token.text, "sqrt") == 0 || strcmp(current_token.text, "pow") == 0) {
+                        last_expr_is_float = 1;
+                        last_expr_is_double = 1;
+                    }
                     advance_token();
                 } else {
                     strcat(buf, name);
@@ -286,9 +369,20 @@ static void parse_expression(char *buf, int stop_at_comma) {
                             strcat(buf, ")");
                             advance_token();
                         }
+                        // If the called function returns a floating-point type, propagate
+                        if (func_has_return(name)) {
+                            if (func_has_double_param(name))
+                                last_expr_is_double = 1;
+                            if (func_has_float_param(name))
+                                last_expr_is_float = 1;
+                        }
                     }
                 } else {
                     strcat(buf, name);
+                    // Propagate float type when a float variable appears in expression
+                    if (strcmp(get_symbol_type(name), "float") == 0 ||
+                        strcmp(get_symbol_type(name), "double") == 0)
+                        last_expr_is_float = 1;
                 }
             }
         } else {
@@ -413,7 +507,8 @@ static void parse_block() {
                     
                     is_slice = 0;
                     char expr[128] = {0}; parse_expression(expr, 0);
-                    if (last_expr_is_float) strcpy(inferred_type, "double");
+                    if (last_expr_is_double) strcpy(inferred_type, "double");
+                    else if (last_expr_is_float) strcpy(inferred_type, "float");
                     
                     if (is_slice) {
                         if (!is_declared(name)) { add_symbol(name, "int[]"); codegen_write("int %s[100];", name); codegen_newline(); codegen_indent_internal(); }
@@ -484,10 +579,25 @@ static void parse_statement() {
             match(TOKEN_KEYWORD);
             char name[64]; strcpy(name, current_token.text); match(TOKEN_IDENTIFIER);
             match(TOKEN_LPAREN);
-            codegen_write(func_has_return(name) ? "int %s(" : "void %s(", name);
+            // Determine return type based on parameter types (double > float > int, or void)
+            const char *ret_type;
+            if (func_has_return(name)) {
+                if (func_has_double_param(name)) ret_type = "double";
+                else if (func_has_float_param(name)) ret_type = "float";
+                else ret_type = "int";
+            } else {
+                ret_type = "void";
+            }
+            codegen_write("%s %s(", ret_type, name);
+            int param_idx = 0;
             while (current_token.type != TOKEN_RPAREN) {
-                codegen_write("int %s", current_token.text); advance_token();
+                const char *param_type = get_func_param_type(name, param_idx);
+                codegen_write("%s %s", param_type, current_token.text);
+                // Add parameter to symbol table so its type is known inside the body
+                add_symbol(current_token.text, param_type);
+                advance_token();
                 if (current_token.type == TOKEN_COMMA) { advance_token(); codegen_write(", "); }
+                param_idx++;
             }
             match(TOKEN_RPAREN);
             codegen_write(")");
@@ -570,7 +680,8 @@ static void parse_statement() {
                 
                 is_slice = 0;
                 char expr[128] = {0}; parse_expression(expr, 0);
-                if (last_expr_is_float) strcpy(inferred_type, "double");
+                if (last_expr_is_double) strcpy(inferred_type, "double");
+                else if (last_expr_is_float) strcpy(inferred_type, "float");
                 
                 if (is_slice) {
                     if (!is_declared(name)) { add_symbol(name, "int[]"); codegen_write("int %s[100];", name); codegen_newline(); codegen_indent_internal(); }
@@ -686,11 +797,115 @@ static void pre_scan_functions(const char *source) {
     }
 }
 
+// Pre-scan: collect variable types from top-level literal assignments
+static void pre_scan_variable_types(const char *source) {
+    lexer_init(source);
+    Token t = lexer_next_token();
+    while (t.type != TOKEN_EOF) {
+        if (t.type == TOKEN_IDENTIFIER) {
+            char var_name[64];
+            strncpy(var_name, t.text, sizeof(var_name) - 1);
+            var_name[sizeof(var_name) - 1] = '\0';
+            Token next = lexer_next_token();
+            if (next.type == TOKEN_ASSIGN) {
+                Token val = lexer_next_token();
+                if (val.type == TOKEN_NUMBER) {
+                    add_pre_var(var_name, strchr(val.text, '.') ? "float" : "int");
+                } else if (val.type == TOKEN_STRING) {
+                    add_pre_var(var_name, val.text[0] == '\'' ? "char" : "char*");
+                }
+                t = val;
+            } else {
+                t = next;
+            }
+            continue;
+        }
+        t = lexer_next_token();
+    }
+}
+
+// Pre-scan: determine function parameter types from call sites using pre_vars
+static void pre_scan_func_call_param_types(const char *source) {
+    lexer_init(source);
+    Token t = lexer_next_token();
+    while (t.type != TOKEN_EOF) {
+        if (t.type == TOKEN_IDENTIFIER) {
+            char func_name[64];
+            strncpy(func_name, t.text, sizeof(func_name) - 1);
+            func_name[sizeof(func_name) - 1] = '\0';
+            Token next = lexer_next_token();
+            if (next.type == TOKEN_LPAREN) {
+                // Check if this is a known user-defined function call
+                int is_known_func = 0;
+                for (int i = 0; i < func_info_count; i++) {
+                    if (strcmp(func_info[i].name, func_name) == 0) { is_known_func = 1; break; }
+                }
+                if (is_known_func) {
+                    // Find or create entry
+                    int idx = -1;
+                    for (int i = 0; i < func_call_param_types_count; i++) {
+                        if (strcmp(func_call_param_types[i].func_name, func_name) == 0) {
+                            idx = i; break;
+                        }
+                    }
+                    if (idx == -1 && func_call_param_types_count < MAX_FUNCS) {
+                        idx = func_call_param_types_count;
+                        strncpy(func_call_param_types[idx].func_name, func_name,
+                                sizeof(func_call_param_types[0].func_name) - 1);
+                        func_call_param_types[idx].func_name[sizeof(func_call_param_types[0].func_name) - 1] = '\0';
+                        func_call_param_types[idx].param_count = 0;
+                        func_call_param_types_count++;
+                    }
+                    if (idx >= 0) {
+                        int param_idx = 0;
+                        Token arg = lexer_next_token();
+                        while (arg.type != TOKEN_RPAREN && arg.type != TOKEN_EOF
+                               && arg.type != TOKEN_NEWLINE) {
+                            if (arg.type == TOKEN_COMMA) {
+                                param_idx++;
+                                arg = lexer_next_token();
+                                continue;
+                            }
+                            if (param_idx < MAX_PARAMS) {
+                                const char *inferred = "int";
+                                if (arg.type == TOKEN_IDENTIFIER) {
+                                    inferred = get_pre_var_type(arg.text);
+                                } else if (arg.type == TOKEN_NUMBER) {
+                                    inferred = strchr(arg.text, '.') ? "float" : "int";
+                                }
+                                // Once a parameter is seen as float, keep it float
+                                if (param_idx >= func_call_param_types[idx].param_count) {
+                                    strncpy(func_call_param_types[idx].param_types[param_idx],
+                                            inferred, sizeof(func_call_param_types[0].param_types[0]) - 1);
+                                    func_call_param_types[idx].param_types[param_idx]
+                                        [sizeof(func_call_param_types[0].param_types[0]) - 1] = '\0';
+                                    func_call_param_types[idx].param_count = param_idx + 1;
+                                } else if (strcmp(inferred, "float") == 0) {
+                                    strncpy(func_call_param_types[idx].param_types[param_idx],
+                                            "float", sizeof(func_call_param_types[0].param_types[0]) - 1);
+                                }
+                            }
+                            arg = lexer_next_token();
+                        }
+                    }
+                }
+                t = next;
+            } else {
+                t = next;
+            }
+            continue;
+        }
+        t = lexer_next_token();
+    }
+}
+
 void parser_run(const char *source) {
     parser_init();
     pre_scan_imports(source);
     pre_scan_len_usage(source);
     pre_scan_functions(source);
+    pre_scan_variable_types(source);
+    pre_scan_func_call_param_types(source);
     lexer_init(source);
     advance_token();
     
