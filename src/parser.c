@@ -97,7 +97,9 @@ static void parse_print() {
         } else if (strcmp(type, "char") == 0) {
             codegen_write("printf(\"%%c\\n\", %s);", expr);
         } else if (strcmp(type, "float") == 0) {
-            codegen_write("printf(\"%%f\\n\", %s);", expr);
+            codegen_write("printf(\"%%g\\n\", %s);", expr);
+        } else if (strcmp(type, "double") == 0) {
+            codegen_write("printf(\"%%g\\n\", %s);", expr);
         } else if (strcmp(type, "int[]") == 0) {
             codegen_write("printf(\"[\");"); codegen_newline(); codegen_indent_internal();
             codegen_write("for (int i = 0; i < %s_len; i++) {", expr); codegen_newline();
@@ -184,7 +186,9 @@ static void parse_expression(char *buf, int stop_at_comma) {
         } else if (current_token.type == TOKEN_LPAREN) {
             strcat(buf, "(");
             advance_token();
-            parse_expression(buf, 0); 
+            int saved_is_float = last_expr_is_float;
+            parse_expression(buf, 0);
+            if (saved_is_float) last_expr_is_float = 1;
             if (current_token.type == TOKEN_RPAREN) {
                 strcat(buf, ")");
                 advance_token();
@@ -380,7 +384,7 @@ static void parse_block() {
                     
                     is_slice = 0;
                     char expr[128] = {0}; parse_expression(expr, 0);
-                    if (last_expr_is_float) strcpy(inferred_type, "float");
+                    if (last_expr_is_float) strcpy(inferred_type, "double");
                     
                     if (is_slice) {
                         if (!is_declared(name)) { add_symbol(name, "int[]"); codegen_write("int %s[100];", name); codegen_newline(); codegen_indent_internal(); }
@@ -532,6 +536,7 @@ static void parse_statement() {
                 
                 is_slice = 0;
                 char expr[128] = {0}; parse_expression(expr, 0);
+                if (last_expr_is_float) strcpy(inferred_type, "double");
                 
                 if (is_slice) {
                     if (!is_declared(name)) { add_symbol(name, "int[]"); codegen_write("int %s[100];", name); codegen_newline(); codegen_indent_internal(); }
