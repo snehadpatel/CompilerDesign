@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
     fclose(f);
 
     lexer_init(source);
-    parser_run();
+    parser_run(source);
 
     free(source);
     printf("Successfully converted %s to output.c\n", argv[1]);

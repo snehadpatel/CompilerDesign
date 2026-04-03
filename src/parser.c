@@ -7,6 +7,8 @@
 
 static Token current_token;
 static int main_started = 0;
+static int math_used = 0;
+static int string_used = 0;
 
 // Simple Symbol Table to track declared variables
 static struct Symbol {
@@ -150,13 +152,25 @@ static void parse_expression(char *buf, int stop_at_comma) {
             else if (strcmp(current_token.text, "not") == 0) strcat(buf, " ! ");
             else if (strcmp(current_token.text, "True") == 0) strcat(buf, " 1 ");
             else if (strcmp(current_token.text, "False") == 0) strcat(buf, " 0 ");
+            else if (strcmp(current_token.text, "import") == 0) break; // Not part of expr
             else break; // Not part of expr
             advance_token();
         } else if (current_token.type == TOKEN_OPERATOR) {
-            strcat(buf, " ");
-            strcat(buf, current_token.text);
-            strcat(buf, " ");
-            advance_token();
+            if (current_token.text[0] == '.') {
+                // Peek at next to see if it's a module we know
+                advance_token(); // skip '.'
+                if (current_token.type == TOKEN_IDENTIFIER) {
+                    // math.sqrt -> sqrt
+                    // Handle math specifically
+                    strcat(buf, current_token.text);
+                    advance_token();
+                }
+            } else {
+                strcat(buf, " ");
+                strcat(buf, current_token.text);
+                strcat(buf, " ");
+                advance_token();
+            }
         } else if (current_token.type == TOKEN_LPAREN) {
             strcat(buf, "(");
             advance_token();
@@ -167,60 +181,71 @@ static void parse_expression(char *buf, int stop_at_comma) {
             }
         } else if (current_token.type == TOKEN_IDENTIFIER) {
             char name[64]; strcpy(name, current_token.text);
-            advance_token();
-            if (current_token.type == TOKEN_LBRACKET) { // INDEXING
+            if (strcmp(name, "math") == 0) {
                 advance_token();
-                char inner_expr[64] = {0};
-                parse_expression(inner_expr, 0);
-                if (current_token.type == TOKEN_COLON) { // SLICING
+                if (current_token.type == TOKEN_OPERATOR && current_token.text[0] == '.') {
+                    advance_token(); // skip '.'
+                    strcat(buf, current_token.text);
                     advance_token();
-                    char inner_expr2[64] = {0};
-                    parse_expression(inner_expr2, 0);
-                    if (current_token.type == TOKEN_RBRACKET) advance_token();
-                    is_slice = 1;
-                    strcpy(slice_arr, name);
-                    strcpy(slice_start, inner_expr);
-                    strcpy(slice_end, inner_expr2);
-                    strcpy(buf, "0"); // Dummy expression value
                 } else {
                     strcat(buf, name);
-                    strcat(buf, "[");
-                    strcat(buf, inner_expr);
-                    if (current_token.type == TOKEN_RBRACKET) advance_token();
-                    strcat(buf, "]");
-                }
-            } else if (current_token.type == TOKEN_LPAREN) { // CALL
-                if (strcmp(name, "len") == 0) {
-                    advance_token(); // (
-                    char arg[64] = {0};
-                    parse_expression(arg, 0);
-                    if (current_token.type == TOKEN_RPAREN) advance_token(); // )
-                    strcat(buf, arg);
-                    strcat(buf, "_len"); // list_len
-                } else if (strcmp(name, "ord") == 0) {
-                    advance_token(); // (
-                    strcat(buf, "(int)(");
-                    parse_expression(buf, 0);
-                    if (current_token.type == TOKEN_RPAREN) advance_token(); // )
-                    strcat(buf, ")");
-                } else if (strcmp(name, "chr") == 0) {
-                    advance_token(); // (
-                    strcat(buf, "(char)(");
-                    parse_expression(buf, 0);
-                    if (current_token.type == TOKEN_RPAREN) advance_token(); // )
-                    strcat(buf, ")");
-                } else {
-                    strcat(buf, name);
-                    strcat(buf, "(");
-                    advance_token();
-                    parse_expression(buf, 0);
-                    if (current_token.type == TOKEN_RPAREN) {
-                        strcat(buf, ")");
-                        advance_token();
-                    }
                 }
             } else {
-                strcat(buf, name);
+                advance_token();
+                if (current_token.type == TOKEN_LBRACKET) { // INDEXING
+                    advance_token();
+                    char inner_expr[64] = {0};
+                    parse_expression(inner_expr, 0);
+                    if (current_token.type == TOKEN_COLON) { // SLICING
+                        advance_token();
+                        char inner_expr2[64] = {0};
+                        parse_expression(inner_expr2, 0);
+                        if (current_token.type == TOKEN_RBRACKET) advance_token();
+                        is_slice = 1;
+                        strcpy(slice_arr, name);
+                        strcpy(slice_start, inner_expr);
+                        strcpy(slice_end, inner_expr2);
+                        strcpy(buf, "0"); // Dummy expression value
+                    } else {
+                        strcat(buf, name);
+                        strcat(buf, "[");
+                        strcat(buf, inner_expr);
+                        if (current_token.type == TOKEN_RBRACKET) advance_token();
+                        strcat(buf, "]");
+                    }
+                } else if (current_token.type == TOKEN_LPAREN) { // CALL
+                    if (strcmp(name, "len") == 0) {
+                        advance_token(); // (
+                        char arg[64] = {0};
+                        parse_expression(arg, 0);
+                        if (current_token.type == TOKEN_RPAREN) advance_token(); // )
+                        strcat(buf, arg);
+                        strcat(buf, "_len"); // list_len
+                    } else if (strcmp(name, "ord") == 0) {
+                        advance_token(); // (
+                        strcat(buf, "(int)(");
+                        parse_expression(buf, 0);
+                        if (current_token.type == TOKEN_RPAREN) advance_token(); // )
+                        strcat(buf, ")");
+                    } else if (strcmp(name, "chr") == 0) {
+                        advance_token(); // (
+                        strcat(buf, "(char)(");
+                        parse_expression(buf, 0);
+                        if (current_token.type == TOKEN_RPAREN) advance_token(); // )
+                        strcat(buf, ")");
+                    } else {
+                        strcat(buf, name);
+                        strcat(buf, "(");
+                        advance_token();
+                        parse_expression(buf, 0);
+                        if (current_token.type == TOKEN_RPAREN) {
+                            strcat(buf, ")");
+                            advance_token();
+                        }
+                    }
+                } else {
+                    strcat(buf, name);
+                }
             }
         } else {
             strcat(buf, current_token.text);
@@ -236,6 +261,19 @@ static void parse_expression(char *buf, int stop_at_comma) {
         if (current_token.type == TOKEN_COLON || current_token.type == TOKEN_NEWLINE || 
             current_token.type == TOKEN_EOF || current_token.type == TOKEN_RPAREN ||
             current_token.type == TOKEN_RBRACKET) break;
+    }
+}
+
+static void parse_import() {
+    match(TOKEN_KEYWORD); // import
+    if (strcmp(current_token.text, "math") == 0) {
+        math_used = 1;
+        match(TOKEN_IDENTIFIER);
+    } else if (strcmp(current_token.text, "string") == 0) {
+        string_used = 1;
+        match(TOKEN_IDENTIFIER);
+    } else {
+        match(TOKEN_IDENTIFIER); // skip unknown
     }
 }
 
@@ -387,6 +425,11 @@ static void parse_statement() {
     
     codegen_indent_internal();
     if (current_token.type == TOKEN_KEYWORD) {
+        if (strcmp(current_token.text, "import") == 0) {
+            parse_import();
+            codegen_newline();
+            return;
+        }
         if (strcmp(current_token.text, "def") == 0) {
             match(TOKEN_KEYWORD);
             char name[64]; strcpy(name, current_token.text); match(TOKEN_IDENTIFIER);
@@ -514,12 +557,33 @@ static void parse_statement() {
     } else { advance_token(); }
 }
 
-void parser_run() {
-    advance_token();
+static void pre_scan_imports(const char *source) {
+    lexer_init(source);
+    Token t = lexer_next_token();
+    while (t.type != TOKEN_EOF) {
+        if (t.type == TOKEN_KEYWORD && strcmp(t.text, "import") == 0) {
+            t = lexer_next_token();
+            if (t.type == TOKEN_IDENTIFIER) {
+                if (strcmp(t.text, "math") == 0) math_used = 1;
+                if (strcmp(t.text, "string") == 0) string_used = 1;
+            }
+        }
+        t = lexer_next_token();
+    }
+    lexer_init(source);
+    advance_token(); 
+}
+
+void parser_run(const char *source) {
+    pre_scan_imports(source);
+    
     codegen_init();
     
-    // Preliminary header writing
-    codegen_write("#include <stdio.h>\n\n");
+    // Header writing - now the flags are set!
+    codegen_write("#include <stdio.h>\n");
+    if (math_used) codegen_write("#include <math.h>\n");
+    if (string_used) codegen_write("#include <string.h>\n");
+    codegen_write("\n");
 
     while (current_token.type != TOKEN_EOF) {
         parse_statement();

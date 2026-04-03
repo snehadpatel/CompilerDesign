@@ -4,6 +4,6 @@
 #include "lexer.h"
 
 void parser_init();
-void parser_run();
+void parser_run(const char *source);
 
 #endif

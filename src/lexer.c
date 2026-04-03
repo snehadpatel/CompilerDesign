@@ -138,7 +138,7 @@ Token lexer_next_token() {
         t.text[i] = '\0';
 
         // Check for keywords
-        const char *keywords[] = {"def", "if", "elif", "else", "for", "in", "range", "while", "return", "print", "input", "int", "float", "str", "True", "False", "None", "and", "or", "not", NULL};
+        const char *keywords[] = {"def", "if", "elif", "else", "for", "in", "range", "while", "return", "print", "input", "int", "float", "str", "True", "False", "None", "and", "or", "not", "import", NULL};
         for (int k = 0; keywords[k]; k++) {
             if (strcmp(t.text, keywords[k]) == 0) {
                 t.type = TOKEN_KEYWORD;
