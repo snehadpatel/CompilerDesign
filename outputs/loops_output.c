@@ -1,8 +1,6 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
-void is_prime(int n) {
+int is_prime(int n) {
     if (n < 2) {
         return 0;
     }

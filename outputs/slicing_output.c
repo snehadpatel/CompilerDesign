@@ -1,6 +1,4 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 int main() {
     int arr[100] = {10, 20, 30, 40, 50};

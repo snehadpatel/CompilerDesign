@@ -1,10 +1,12 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 int main() {
     int x = 10;
     if (x > 5) {
         printf("%s\n", "Greater");
     }
-    else
+    else {
+        printf("%s\n", "This syntax error will crash the compiler properly now");
+    }
+    return 0;
+}

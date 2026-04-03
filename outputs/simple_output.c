@@ -1,8 +1,6 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
-void greet(int name) {
+int greet(int name) {
     printf("%s\n", "Hello ");
     printf("%d\n", name);
 }

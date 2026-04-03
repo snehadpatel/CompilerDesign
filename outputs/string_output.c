@@ -1,10 +1,9 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 int main() {
     char* message = "Hello, Compiler Lab";
-    printf("%d\n", message);
+    int message_len = 19;
+    printf("%s\n", message);
     int length = message_len;
     printf("%d\n", length);
     if (length > 20) {

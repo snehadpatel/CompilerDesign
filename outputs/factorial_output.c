@@ -1,8 +1,6 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
-void factorial(int n) {
+int factorial(int n) {
     if (n <= 1) {
         return 1;
     }
