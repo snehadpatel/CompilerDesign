@@ -35,6 +35,21 @@ static int needs_len_var(const char *name) {
     return 0;
 }
 
+// Track which functions have a return statement (to determine return type)
+#define MAX_FUNCS 100
+static struct FuncInfo {
+    char name[64];
+    int has_return;
+} func_info[MAX_FUNCS];
+static int func_info_count = 0;
+
+static int func_has_return(const char *name) {
+    for (int i = 0; i < func_info_count; i++) {
+        if (strcmp(func_info[i].name, name) == 0) return func_info[i].has_return;
+    }
+    return 0;
+}
+
 void parser_init() {
     symbol_count = 0;
     main_started = 0;
@@ -44,6 +59,7 @@ void parser_init() {
     is_slice = 0;
     last_expr_is_float = 0;
     len_needed_count = 0;
+    func_info_count = 0;
 }
 
 static void add_symbol(const char *name, const char *type) {
@@ -468,7 +484,7 @@ static void parse_statement() {
             match(TOKEN_KEYWORD);
             char name[64]; strcpy(name, current_token.text); match(TOKEN_IDENTIFIER);
             match(TOKEN_LPAREN);
-            codegen_write("int %s(", name);
+            codegen_write(func_has_return(name) ? "int %s(" : "void %s(", name);
             while (current_token.type != TOKEN_RPAREN) {
                 codegen_write("int %s", current_token.text); advance_token();
                 if (current_token.type == TOKEN_COMMA) { advance_token(); codegen_write(", "); }
@@ -637,10 +653,44 @@ static void pre_scan_len_usage(const char *source) {
     }
 }
 
+static void pre_scan_functions(const char *source) {
+    lexer_init(source);
+    Token t = lexer_next_token();
+    while (t.type != TOKEN_EOF) {
+        if (t.type == TOKEN_KEYWORD && strcmp(t.text, "def") == 0) {
+            t = lexer_next_token();
+            if (t.type == TOKEN_IDENTIFIER && func_info_count < MAX_FUNCS) {
+                strncpy(func_info[func_info_count].name, t.text, sizeof(func_info[func_info_count].name) - 1);
+                func_info[func_info_count].name[sizeof(func_info[func_info_count].name) - 1] = '\0';
+                func_info[func_info_count].has_return = 0;
+                int current_func = func_info_count;
+                func_info_count++;
+                // Scan tokens inside this function body tracking INDENT/DEDENT depth
+                int depth = 0;
+                t = lexer_next_token();
+                while (t.type != TOKEN_EOF) {
+                    if (t.type == TOKEN_INDENT) {
+                        depth++;
+                    } else if (t.type == TOKEN_DEDENT) {
+                        depth--;
+                        if (depth <= 0) break;
+                    } else if (t.type == TOKEN_KEYWORD && strcmp(t.text, "return") == 0 && depth > 0) {
+                        func_info[current_func].has_return = 1;
+                    }
+                    t = lexer_next_token();
+                }
+                continue;
+            }
+        }
+        t = lexer_next_token();
+    }
+}
+
 void parser_run(const char *source) {
     parser_init();
     pre_scan_imports(source);
     pre_scan_len_usage(source);
+    pre_scan_functions(source);
     lexer_init(source);
     advance_token();
     

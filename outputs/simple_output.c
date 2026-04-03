@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-int greet(int name) {
+void greet(int name) {
     printf("Hello \n");
     printf("%d\n", name);
 }
