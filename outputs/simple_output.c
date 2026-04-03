@@ -1,18 +1,18 @@
 #include <stdio.h>
 
 int greet(int name) {
-    printf("%s\n", "Hello ");
+    printf("Hello \n");
     printf("%d\n", name);
 }
 int main() {
     int val; 
-    printf("%s", "Enter value: ");
+    printf("Enter value: ");
     scanf("%d", &val);
     if (val > 10) {
-        printf("%s\n", "Greater than 10");
+        printf("Greater than 10\n");
     }
     else {
-        printf("%s\n", "Small");
+        printf("Small\n");
     }
     greet(val);
     return 0;

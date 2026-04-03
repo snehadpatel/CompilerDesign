@@ -74,7 +74,9 @@ static void parse_print() {
     if (current_token.type == TOKEN_STRING) {
         strcpy(expr, current_token.text);
         advance_token();
-        codegen_write("printf(\"%%s\\n\", %s);", expr);
+        char inner[256] = {0};
+        strncpy(inner, expr + 1, strlen(expr) - 2);
+        codegen_write("printf(\"%s\\n\");", inner);
     } else {
         parse_expression(expr, 0);
         
@@ -84,7 +86,14 @@ static void parse_print() {
         } else if (strcmp(type, "float") == 0) {
             codegen_write("printf(\"%%f\\n\", %s);", expr);
         } else if (strcmp(type, "int[]") == 0) {
-            codegen_write("printf(\"%%p\\n\", (void*)%s);", expr);
+            codegen_write("printf(\"[\");"); codegen_newline(); codegen_indent_internal();
+            codegen_write("for (int i = 0; i < %s_len; i++) {", expr); codegen_newline();
+            current_indent++; codegen_indent_internal();
+            codegen_write("printf(\"%%d\", %s[i]);", expr); codegen_newline(); codegen_indent_internal();
+            codegen_write("if (i < %s_len - 1) printf(\", \");", expr); codegen_newline();
+            current_indent--; codegen_indent_internal();
+            codegen_write("}"); codegen_newline(); codegen_indent_internal();
+            codegen_write("printf(\"]\\n\");");
         } else {
             codegen_write("printf(\"%%d\\n\", %s);", expr); // default int assumption 
         }
@@ -102,7 +111,9 @@ static void parse_input(const char *var_name) {
             match(TOKEN_LPAREN);
             if (current_token.type == TOKEN_STRING) {
                 codegen_write("\n"); codegen_indent_internal();
-                codegen_write("printf(\"%%s\", %s);", current_token.text);
+                char inner[256] = {0};
+                strncpy(inner, current_token.text + 1, strlen(current_token.text) - 2);
+                codegen_write("printf(\"%s\");", inner);
                 advance_token();
             }
             match(TOKEN_RPAREN);
@@ -115,7 +126,9 @@ static void parse_input(const char *var_name) {
         match(TOKEN_LPAREN);
         if (current_token.type == TOKEN_STRING) {
             codegen_write("\n"); codegen_indent_internal();
-            codegen_write("printf(\"%%s\", %s);", current_token.text);
+            char inner[256] = {0};
+            strncpy(inner, current_token.text + 1, strlen(current_token.text) - 2);
+            codegen_write("printf(\"%s\");", inner);
             advance_token();
         }
         match(TOKEN_RPAREN);

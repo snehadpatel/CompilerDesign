@@ -9,7 +9,7 @@ int factorial(int n) {
     }
 }
 int main() {
-    printf("%s\n", "Factorial Test");
+    printf("Factorial Test\n");
     int x = 5;
     int res = factorial(x);
     printf("%d\n", res);
