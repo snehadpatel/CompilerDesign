@@ -83,6 +83,8 @@ static void parse_print() {
         const char *type = get_symbol_type(expr);
         if (strcmp(type, "char*") == 0) {
             codegen_write("printf(\"%%s\\n\", %s);", expr);
+        } else if (strcmp(type, "char") == 0) {
+            codegen_write("printf(\"%%c\\n\", %s);", expr);
         } else if (strcmp(type, "float") == 0) {
             codegen_write("printf(\"%%f\\n\", %s);", expr);
         } else if (strcmp(type, "int[]") == 0) {
@@ -471,6 +473,7 @@ static void parse_statement() {
                     else strcpy(inferred_type, "char*");
                 }
                 else if (current_token.type == TOKEN_NUMBER && strchr(current_token.text, '.')) strcpy(inferred_type, "float");
+                else if (current_token.type == TOKEN_IDENTIFIER && strcmp(current_token.text, "chr") == 0) strcpy(inferred_type, "char");
                 
                 is_slice = 0;
                 char expr[128] = {0}; parse_expression(expr, 0);

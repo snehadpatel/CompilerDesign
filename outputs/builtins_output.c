@@ -8,7 +8,7 @@ int main() {
     char c = 'A';
     int val = (int)(c);
     printf("%d\n", val);
-    int ch = (char)(66);
-    printf("%d\n", ch);
+    char ch = (char)(66);
+    printf("%c\n", ch);
     return 0;
 }
