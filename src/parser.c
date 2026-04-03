@@ -9,13 +9,29 @@ static Token current_token;
 static int main_started = 0;
 static int math_used = 0;
 static int string_used = 0;
+static int symbol_count = 0;
+static int current_indent = 0;
+static int is_slice = 0;
+static int last_expr_is_float = 0;
+static char slice_arr[64] = {0};
+static char slice_start[64] = {0};
+static char slice_end[64] = {0};
 
 // Simple Symbol Table to track declared variables
 static struct Symbol {
     char name[64];
     char type[32];
 } symbols[100];
-static int symbol_count = 0;
+
+void parser_init() {
+    symbol_count = 0;
+    main_started = 0;
+    math_used = 0;
+    string_used = 0;
+    current_indent = 0;
+    is_slice = 0;
+    last_expr_is_float = 0;
+}
 
 static void add_symbol(const char *name, const char *type) {
     for (int i = 0; i < symbol_count; i++) {
@@ -56,13 +72,6 @@ static void match(TokenType type) {
 }
 
 static void parse_expression(char *buf, int stop_at_comma);
-
-static int current_indent = 0;
-
-static int is_slice = 0;
-static char slice_arr[64] = {0};
-static char slice_start[64] = {0};
-static char slice_end[64] = {0};
 
 static void codegen_indent_internal() {
     for (int i = 0; i < current_indent; i++) codegen_write("    ");
@@ -142,6 +151,7 @@ static void parse_input(const char *var_name) {
 }
 
 static void parse_expression(char *buf, int stop_at_comma) {
+    last_expr_is_float = 0;
     while (current_token.type == TOKEN_NUMBER || current_token.type == TOKEN_IDENTIFIER || 
            current_token.type == TOKEN_STRING || current_token.type == TOKEN_LPAREN || 
            current_token.type == TOKEN_KEYWORD || current_token.type == TOKEN_OPERATOR) {
@@ -186,6 +196,7 @@ static void parse_expression(char *buf, int stop_at_comma) {
                 if (current_token.type == TOKEN_OPERATOR && current_token.text[0] == '.') {
                     advance_token(); // skip '.'
                     strcat(buf, current_token.text);
+                    if (strcmp(current_token.text, "sqrt") == 0 || strcmp(current_token.text, "pow") == 0) last_expr_is_float = 1;
                     advance_token();
                 } else {
                     strcat(buf, name);
@@ -369,6 +380,7 @@ static void parse_block() {
                     
                     is_slice = 0;
                     char expr[128] = {0}; parse_expression(expr, 0);
+                    if (last_expr_is_float) strcpy(inferred_type, "float");
                     
                     if (is_slice) {
                         if (!is_declared(name)) { add_symbol(name, "int[]"); codegen_write("int %s[100];", name); codegen_newline(); codegen_indent_internal(); }
@@ -575,6 +587,7 @@ static void pre_scan_imports(const char *source) {
 }
 
 void parser_run(const char *source) {
+    parser_init();
     pre_scan_imports(source);
     
     codegen_init();
