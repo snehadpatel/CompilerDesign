@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: compiler-design-ui
+    env: python
+    region: oregon # Or any available region
+    plan: free # Use the free tier
+    buildCommand: "make clean && make && pip install -r requirements.txt"
+    startCommand: "streamlit run ui/app.py --server.port $PORT --server.address 0.0.0.0"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9

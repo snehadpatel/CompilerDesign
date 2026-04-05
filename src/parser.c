@@ -17,12 +17,12 @@ static int symbol_count = 0;
 static int current_indent = 0;
 static char current_func_name[64] = "";
 static int is_slice = 0;
-static int last_expr_is_float = 0;
 static char slice_arr[64] = {0};
 static char slice_start[64] = {0};
 static char slice_end[64] = {0};
 static int comp_count = 0;
 static int last_expr_is_float = 0;
+static int last_expr_is_double = 0;
 
 
 // Simple Symbol Table to track declared variables
@@ -738,7 +738,20 @@ static void parse_statement() {
             char name[64]; strcpy(name, current_token.text); match(TOKEN_IDENTIFIER);
             strcpy(current_func_name, name);
             match(TOKEN_LPAREN);
-            codegen_write("int %s(", name);
+            if (strcmp(name, "main") == 0) {
+                codegen_write("int main(");
+            } else {
+                // Determine return type based on usage (default to PythonList if generic, or primitive if math-heavy)
+                const char *ret_type = "PythonList";
+                if (func_has_return(name)) {
+                    if (func_has_double_param(name)) ret_type = "double";
+                    else if (func_has_float_param(name)) ret_type = "float";
+                } else {
+                    ret_type = "void";
+                }
+                codegen_write("%s %s(", ret_type, name);
+            }
+            int param_idx = 0;
             while (current_token.type != TOKEN_RPAREN) {
                 const char *param_type = get_func_param_type(name, param_idx);
                 codegen_write("%s %s", param_type, current_token.text);
@@ -865,8 +878,21 @@ static void parse_statement() {
                 match(TOKEN_RBRACKET); 
                 codegen_write("%s.len = %d;", name, elem_count);
             } else {
+                char inferred_type[32] = "int";
+                if (current_token.type == TOKEN_STRING) {
+                    if (current_token.text[0] == '\'') strcpy(inferred_type, "char");
+                    else strcpy(inferred_type, "char*");
+                }
+                else if (current_token.type == TOKEN_NUMBER && strchr(current_token.text, '.')) strcpy(inferred_type, "float");
+
                 is_slice = 0;
                 char expr[128] = {0}; parse_expression(expr, 0);
+
+                if (last_expr_is_double) strcpy(inferred_type, "double");
+                else if (last_expr_is_float) strcpy(inferred_type, "float");
+                else if (strstr(expr, "tmp_list_") || (strstr(expr, "(") && !strstr(expr, "math.") && !strstr(expr, "input("))) {
+                     strcpy(inferred_type, "int[]"); 
+                }
                 
                 if (is_slice) {
                     if (!is_declared(name)) { add_symbol(name, "int[]"); codegen_write("PythonList %s;", name); codegen_newline(); codegen_indent_internal(); }
