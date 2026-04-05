@@ -129,30 +129,13 @@ Token lexer_next_token() {
         return t;
     }
 
-    if (isalpha(c) || c == '_') {
-        Token t = {TOKEN_IDENTIFIER, "", line, col};
-        int i = 0;
-        while (isalnum(peek()) || peek() == '_') {
-            t.text[i++] = advance();
-        }
-        t.text[i] = '\0';
-
-        // Check for keywords
-        const char *keywords[] = {"def", "if", "elif", "else", "for", "in", "range", "while", "return", "print", "input", "int", "float", "str", "True", "False", "None", "and", "or", "not", "import", NULL};
-        for (int k = 0; keywords[k]; k++) {
-            if (strcmp(t.text, keywords[k]) == 0) {
-                t.type = TOKEN_KEYWORD;
-                break;
-            }
-        }
-        return t;
-    }
-
-    if (c == '"' || c == '\'') {
-        char quote = advance();
+    if (c == '"' || c == '\'' || (c == 'f' && (source_code[cursor+1] == '"' || source_code[cursor+1] == '\''))) {
         Token t = {TOKEN_STRING, "", line, col};
         int i = 0;
-        t.text[i++] = quote; // Keep quote
+        if (c == 'f') t.text[i++] = advance(); // keep 'f' in token text
+        char quote = advance();
+        t.text[i++] = quote;
+
         // Check for triple quotes
         if (peek() == quote && source_code[cursor+1] == quote) {
             t.text[i++] = advance();
@@ -174,6 +157,26 @@ Token lexer_next_token() {
         t.text[i] = '\0';
         return t;
     }
+
+    if (isalpha(c) || c == '_') {
+        Token t = {TOKEN_IDENTIFIER, "", line, col};
+        int i = 0;
+        while (isalnum(peek()) || peek() == '_') {
+            t.text[i++] = advance();
+        }
+        t.text[i] = '\0';
+
+        // Check for keywords
+        const char *keywords[] = {"def", "if", "elif", "else", "for", "in", "range", "while", "return", "print", "input", "int", "float", "str", "True", "False", "None", "and", "or", "not", "import", "try", "except", "ValueError", NULL};
+        for (int k = 0; keywords[k]; k++) {
+            if (strcmp(t.text, keywords[k]) == 0) {
+                t.type = TOKEN_KEYWORD;
+                break;
+            }
+        }
+        return t;
+    }
+
 
     // Punctuation and Operators
     TokenType type = TOKEN_ERROR;

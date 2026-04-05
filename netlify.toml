@@ -1,0 +1,11 @@
+[build]
+  command = "make && pip install -r requirements.txt"
+  publish = "."
+
+[build.environment]
+  PYTHON_VERSION = "3.9"
+
+[[redirects]]
+  from = "/"
+  to = "/"
+  status = 200

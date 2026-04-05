@@ -19,6 +19,24 @@ void codegen_init() {
     codegen_add_header("stdio.h");
     codegen_add_header("stdlib.h");
     codegen_add_header("string.h");
+    codegen_add_header("stdbool.h");
+
+    // Project Boilerplate: Python-like List for C
+    codegen_write_raw("#include <stdio.h>\n");
+    codegen_write_raw("#include <stdbool.h>\n\n");
+    codegen_write_raw("typedef struct {\n");
+    codegen_write_raw("    int data[100];\n");
+    codegen_write_raw("    int len;\n");
+    codegen_write_raw("} PythonList;\n\n");
+    
+    codegen_write_raw("void print_list(PythonList list) {\n");
+    codegen_write_raw("    printf(\"[\");\n");
+    codegen_write_raw("    for (int i = 0; i < list.len; i++) {\n");
+    codegen_write_raw("        printf(\"%d\", list.data[i]);\n");
+    codegen_write_raw("        if (i < list.len - 1) printf(\", \");\n");
+    codegen_write_raw("    }\n");
+    codegen_write_raw("    printf(\"]\\n\");\n");
+    codegen_write_raw("}\n\n");
 }
 
 void codegen_add_header(const char *header) {
@@ -35,12 +53,16 @@ void codegen_indent() {
 void codegen_write(const char *format, ...) {
     va_list args;
     va_start(args, format);
-    vfprintf(out_file, format, args);
+    if (out_file) vfprintf(out_file, format, args);
     va_end(args);
 }
 
+void codegen_write_raw(const char *text) {
+    if (out_file) fputs(text, out_file);
+}
+
 void codegen_newline() {
-    fprintf(out_file, "\n");
+    if (out_file) fprintf(out_file, "\n");
     codegen_indent();
 }
 

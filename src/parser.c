@@ -5,18 +5,25 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+static void parse_statement();
+static void parse_block();
+static void parse_block_internal();
+
 static Token current_token;
 static int main_started = 0;
 static int math_used = 0;
 static int string_used = 0;
 static int symbol_count = 0;
 static int current_indent = 0;
+static char current_func_name[64] = "";
 static int is_slice = 0;
 static int last_expr_is_float = 0;
-static int last_expr_is_double = 0;
 static char slice_arr[64] = {0};
 static char slice_start[64] = {0};
 static char slice_end[64] = {0};
+static int comp_count = 0;
+static int last_expr_is_float = 0;
+
 
 // Simple Symbol Table to track declared variables
 static struct Symbol {
@@ -132,11 +139,6 @@ void parser_init() {
     current_indent = 0;
     is_slice = 0;
     last_expr_is_float = 0;
-    last_expr_is_double = 0;
-    len_needed_count = 0;
-    func_info_count = 0;
-    pre_var_count = 0;
-    func_call_param_types_count = 0;
 }
 
 static void add_symbol(const char *name, const char *type) {
@@ -188,13 +190,64 @@ static void parse_print() {
     match(TOKEN_LPAREN);
     
     char expr[256] = {0};
+    while (current_token.type == TOKEN_LPAREN) advance_token(); // skip (
+    
     if (current_token.type == TOKEN_STRING) {
-        strcpy(expr, current_token.text);
+        char full_expr[256];
+        strcpy(full_expr, current_token.text);
         advance_token();
-        char inner[256] = {0};
-        strncpy(inner, expr + 1, strlen(expr) - 2);
-        codegen_write("printf(\"%s\\n\");", inner);
+        
+        if (full_expr[0] == 'f') { // f-string handling: f"Hello {name}"
+            char format[256] = {0};
+            char args[256] = {0};
+            char quote = (full_expr[1] == '"' || full_expr[1] == '\'') ? full_expr[1] : '"';
+            char *p = full_expr + 2; 
+            char *f = format;
+            char *a = args;
+            while (*p != quote && *p != '\0') {
+                if (*p == '{') {
+                    p++;
+                    char var[64] = {0}; int vi = 0;
+                    while (*p != '}' && *p != '\0') { if (vi < 63) var[vi++] = *p++; else p++; }
+                    if (*p == '}') p++;
+                    
+                    const char *type = get_symbol_type(var);
+                    if (strstr(type, "[]")) {
+                        // Close printf, call printer, reopen printf
+                        *f = '\0';
+                        codegen_write_raw("printf(\""); codegen_write_raw(format); codegen_write_raw("\""); codegen_write_raw(args); codegen_write_raw("); ");
+                        codegen_write("print_list(%s); ", var);
+                        *format = '\0'; f = format; 
+                        *args = '\0'; a = args; // Reset args too!
+                    } else if (strcmp(type, "float") == 0) { 
+                        f += sprintf(f, "%%f"); strcat(a, ", "); strcat(a, var); 
+                    } else if (strcmp(type, "char*") == 0) { 
+                        f += sprintf(f, "%%s"); strcat(a, ", "); strcat(a, var); 
+                    } else { 
+                        f += sprintf(f, "%%d"); strcat(a, ", "); strcat(a, var); 
+                    }
+
+                } else {
+                    *f++ = *p++;
+                }
+            }
+            *f = '\0';
+            *f = '\0';
+            codegen_write_raw("printf(\"");
+            codegen_write_raw(format);
+            if (strlen(format) > 0) codegen_write_raw("\\n\"");
+            else codegen_write_raw("\""); // Already ended with list printer
+            codegen_write_raw(args);
+            codegen_write_raw(");");
+        } else {
+            char inner[256] = {0};
+            strncpy(inner, full_expr + 1, strlen(full_expr) - 2);
+            codegen_write_raw("printf(\"");
+            codegen_write_raw(inner);
+            codegen_write_raw("\\n\");");
+        }
     } else {
+        char expr[128] = {0};
         parse_expression(expr, 0);
         
         const char *type = get_symbol_type(expr);
@@ -207,20 +260,13 @@ static void parse_print() {
         } else if (strcmp(type, "double") == 0) {
             codegen_write("printf(\"%%g\\n\", %s);", expr);
         } else if (strcmp(type, "int[]") == 0) {
-            codegen_write("printf(\"[\");"); codegen_newline(); codegen_indent_internal();
-            codegen_write("for (int i = 0; i < %s_len; i++) {", expr); codegen_newline();
-            current_indent++; codegen_indent_internal();
-            codegen_write("printf(\"%%d\", %s[i]);", expr); codegen_newline(); codegen_indent_internal();
-            codegen_write("if (i < %s_len - 1) printf(\", \");", expr); codegen_newline();
-            current_indent--; codegen_indent_internal();
-            codegen_write("}"); codegen_newline(); codegen_indent_internal();
-            codegen_write("printf(\"]\\n\");");
+            codegen_write("print_list(%s);", expr);
         } else {
-            codegen_write("printf(\"%%d\\n\", %s);", expr); // default int assumption 
+            codegen_write("printf(\"%%d\\n\", %s);", expr); 
         }
     }
     
-    match(TOKEN_RPAREN);
+    while (current_token.type == TOKEN_RPAREN) advance_token(); // skip )
 }
 
 static void parse_input(const char *var_name) {
@@ -231,7 +277,6 @@ static void parse_input(const char *var_name) {
             match(TOKEN_KEYWORD); // input
             match(TOKEN_LPAREN);
             if (current_token.type == TOKEN_STRING) {
-                codegen_write("\n"); codegen_indent_internal();
                 char inner[256] = {0};
                 strncpy(inner, current_token.text + 1, strlen(current_token.text) - 2);
                 codegen_write("printf(\"%s\");", inner);
@@ -240,21 +285,26 @@ static void parse_input(const char *var_name) {
             match(TOKEN_RPAREN);
         }
         match(TOKEN_RPAREN);
-        codegen_write("\n"); codegen_indent_internal();
+        codegen_newline();
+        codegen_indent_internal();
         codegen_write("scanf(\"%%d\", &%s);", var_name);
     } else if (strcmp(current_token.text, "input") == 0) {
         match(TOKEN_KEYWORD); // input
         match(TOKEN_LPAREN);
         if (current_token.type == TOKEN_STRING) {
-            codegen_write("\n"); codegen_indent_internal();
             char inner[256] = {0};
             strncpy(inner, current_token.text + 1, strlen(current_token.text) - 2);
             codegen_write("printf(\"%s\");", inner);
             advance_token();
         }
         match(TOKEN_RPAREN);
-        codegen_write("\n"); codegen_indent_internal();
-        codegen_write("scanf(\"%%s\", %s);", var_name);
+        codegen_newline();
+        codegen_indent_internal();
+        if (strcmp(get_symbol_type(var_name), "int") == 0) {
+            codegen_write("scanf(\"%%d\", &%s);", var_name);
+        } else {
+            codegen_write("scanf(\"%%s\", %s);", var_name);
+        }
     }
 }
 
@@ -263,7 +313,55 @@ static void parse_expression(char *buf, int stop_at_comma) {
     last_expr_is_double = 0;
     while (current_token.type == TOKEN_NUMBER || current_token.type == TOKEN_IDENTIFIER || 
            current_token.type == TOKEN_STRING || current_token.type == TOKEN_LPAREN || 
-           current_token.type == TOKEN_KEYWORD || current_token.type == TOKEN_OPERATOR) {
+           current_token.type == TOKEN_KEYWORD || current_token.type == TOKEN_OPERATOR ||
+           current_token.type == TOKEN_LBRACKET) {
+        
+        if (current_token.type == TOKEN_LBRACKET) {
+            advance_token();
+            // Potential List Comprehension: [item for var in range(...)]
+            char item_expr[128] = {0};
+            parse_expression(item_expr, 0);
+            
+            if (current_token.type == TOKEN_KEYWORD && strcmp(current_token.text, "for") == 0) {
+                advance_token(); // for
+                char var[64]; strcpy(var, current_token.text); advance_token(); // var
+                match(TOKEN_KEYWORD); // in
+                match(TOKEN_KEYWORD); // range
+                match(TOKEN_LPAREN);
+                char start[32] = "0", end[32] = "", step[32] = {0};
+                char arg1[32] = {0}; parse_expression(arg1, 1);
+                if (current_token.type == TOKEN_COMMA) {
+                    advance_token(); strcpy(start, arg1); parse_expression(end, 1);
+                    if (current_token.type == TOKEN_COMMA) { advance_token(); parse_expression(step, 1); }
+                } else { strcpy(end, arg1); }
+                if (strlen(step) == 0) strcpy(step, "1");
+                match(TOKEN_RPAREN);
+                match(TOKEN_RBRACKET);
+                
+                char comp_name[64]; sprintf(comp_name, "tmp_list_%d", ++comp_count);
+                codegen_write("PythonList %s; %s.len = 0;", comp_name, comp_name); codegen_newline();
+                codegen_indent_internal();
+                codegen_write("for (int %s = %s; %s < %s; %s += %s) {", var, start, var, end, var, step);
+                codegen_newline(); current_indent++; codegen_indent_internal();
+                codegen_write("%s.data[%s.len++] = %s;", comp_name, comp_name, item_expr);
+                codegen_newline(); current_indent--; codegen_indent_internal();
+                codegen_write("}"); codegen_newline();
+                codegen_indent_internal();
+                
+                strcat(buf, comp_name);
+                add_symbol(comp_name, "int[]");
+            } else {
+                // Regular list literal [1, 2, 3] or empty list []
+                if (strlen(item_expr) == 0 && current_token.type == TOKEN_RBRACKET) {
+                    strcat(buf, "(PythonList){0}"); // Proper compound literal
+                    advance_token();
+                } else {
+                    strcat(buf, "["); strcat(buf, item_expr); 
+                    if (current_token.type == TOKEN_RBRACKET) { strcat(buf, "]"); advance_token(); }
+                }
+            }
+            continue;
+        }
         
         if (current_token.type == TOKEN_KEYWORD) {
             if (strcmp(current_token.text, "and") == 0) strcat(buf, " && ");
@@ -334,11 +432,20 @@ static void parse_expression(char *buf, int stop_at_comma) {
                         strcpy(slice_end, inner_expr2);
                         strcpy(buf, "0"); // Dummy expression value
                     } else {
-                        strcat(buf, name);
-                        strcat(buf, "[");
-                        strcat(buf, inner_expr);
-                        if (current_token.type == TOKEN_RBRACKET) advance_token();
-                        strcat(buf, "]");
+                        const char *type = get_symbol_type(name);
+                        if (strstr(type, "[]")) {
+                            strcat(buf, name);
+                            strcat(buf, ".data[");
+                            strcat(buf, inner_expr);
+                            if (current_token.type == TOKEN_RBRACKET) advance_token();
+                            strcat(buf, "]");
+                        } else {
+                            strcat(buf, name);
+                            strcat(buf, "[");
+                            strcat(buf, inner_expr);
+                            if (current_token.type == TOKEN_RBRACKET) advance_token();
+                            strcat(buf, "]");
+                        }
                     }
                 } else if (current_token.type == TOKEN_LPAREN) { // CALL
                     if (strcmp(name, "len") == 0) {
@@ -347,7 +454,9 @@ static void parse_expression(char *buf, int stop_at_comma) {
                         parse_expression(arg, 0);
                         if (current_token.type == TOKEN_RPAREN) advance_token(); // )
                         strcat(buf, arg);
-                        strcat(buf, "_len"); // list_len
+                        const char *type = get_symbol_type(arg);
+                        if (strstr(type, "[]")) strcat(buf, ".len");
+                        else strcat(buf, "_len"); // Fallback for raw strings if any
                     } else if (strcmp(name, "ord") == 0) {
                         advance_token(); // (
                         strcat(buf, "(int)(");
@@ -415,8 +524,7 @@ static void parse_import() {
     }
 }
 
-static void parse_block() {
-    match(TOKEN_COLON);
+static void parse_block_internal() {
     if (current_token.type == TOKEN_NEWLINE) advance_token();
     match(TOKEN_INDENT);
     codegen_write(" {");
@@ -432,13 +540,17 @@ static void parse_block() {
                 match(TOKEN_KEYWORD);
                 codegen_write("if (");
                 char cond[128] = {0}; parse_expression(cond, 0);
-                codegen_write("%s)", cond);
+                const char *type = get_symbol_type(cond);
+                if (strstr(type, "[]")) codegen_write("%s.len > 0)", cond);
+                else codegen_write("%s)", cond);
                 parse_block();
             } else if (strcmp(current_token.text, "elif") == 0) {
                 match(TOKEN_KEYWORD);
                 codegen_write("else if (");
                 char cond[128] = {0}; parse_expression(cond, 0);
-                codegen_write("%s)", cond);
+                const char *type = get_symbol_type(cond);
+                if (strstr(type, "[]")) codegen_write("%s.len > 0)", cond);
+                else codegen_write("%s)", cond);
                 parse_block();
             } else if (strcmp(current_token.text, "else") == 0) {
                 match(TOKEN_KEYWORD);
@@ -448,12 +560,31 @@ static void parse_block() {
                 match(TOKEN_KEYWORD);
                 codegen_write("while (");
                 char cond[128] = {0}; parse_expression(cond, 0);
-                codegen_write("%s)", cond);
+                const char *type = get_symbol_type(cond);
+                if (strstr(type, "[]")) codegen_write("%s.len > 0)", cond);
+                else codegen_write("%s)", cond);
                 parse_block();
             } else if (strcmp(current_token.text, "return") == 0) {
                 match(TOKEN_KEYWORD);
                 char expr[128] = {0}; parse_expression(expr, 0);
-                codegen_write("return %s;", expr);
+                char *trim_expr = expr; while(*trim_expr == ' ') trim_expr++;
+                
+                if (strstr(trim_expr, "tmp_list_") || trim_expr[0] == '(') { 
+                    codegen_write("return %s;", trim_expr);
+                } else if (strcmp(trim_expr, "[]") == 0 || strcmp(trim_expr, "{}") == 0) {
+                    codegen_write("return (PythonList){0};");
+                } else {
+                    const char *type = get_symbol_type(trim_expr);
+                    if (strstr(type, "[]")) {
+                        codegen_write("return %s;", trim_expr);
+                    } else {
+                        if (strcmp(current_func_name, "main") == 0) {
+                             codegen_write("return %s;", strlen(trim_expr) > 0 ? trim_expr : "0");
+                        } else {
+                             codegen_write("PythonList _ret; _ret.len = 1; _ret.data[0] = %s; return _ret;", strlen(trim_expr) > 0 ? trim_expr : "0");
+                        }
+                    }
+                }
                 codegen_newline();
             } else if (strcmp(current_token.text, "for") == 0) {
                 match(TOKEN_KEYWORD);
@@ -472,6 +603,21 @@ static void parse_block() {
                 match(TOKEN_RPAREN);
                 codegen_write("for (int %s = %s; %s < %s; %s += %s)", var, start, var, end, var, step);
                 parse_block();
+            } else if (strcmp(current_token.text, "try") == 0) {
+                match(TOKEN_KEYWORD);
+                codegen_write("// try block start");
+                parse_block();
+            } else if (strcmp(current_token.text, "except") == 0) {
+                match(TOKEN_KEYWORD);
+                while (current_token.type != TOKEN_COLON) advance_token();
+                match(TOKEN_COLON);
+                codegen_write("// except block skipped");
+                if (current_token.type == TOKEN_NEWLINE) advance_token();
+                if (current_token.type == TOKEN_INDENT) {
+                    advance_token();
+                    while (current_token.type != TOKEN_DEDENT && current_token.type != TOKEN_EOF) advance_token();
+                    if (current_token.type == TOKEN_DEDENT) advance_token();
+                }
             } else if (strcmp(current_token.text, "print") == 0) {
                 parse_print();
                 codegen_newline();
@@ -481,7 +627,12 @@ static void parse_block() {
             if (current_token.type == TOKEN_ASSIGN) {
                 match(TOKEN_ASSIGN);
                 if (current_token.type == TOKEN_KEYWORD && (strcmp(current_token.text, "int") == 0 || strcmp(current_token.text, "input") == 0)) {
+                    // Scoping fix: always declare input target
+                    codegen_write("int %s; ", name); 
+                    add_symbol(name, "int"); 
+                    codegen_newline(); codegen_indent_internal();
                     parse_input(name);
+
                 } else if (current_token.type == TOKEN_LBRACKET) {
                     match(TOKEN_LBRACKET);
                     if (!is_declared(name)) { codegen_write("int %s[100] = {", name); add_symbol(name, "int[]"); }
@@ -507,14 +658,16 @@ static void parse_block() {
                     
                     is_slice = 0;
                     char expr[128] = {0}; parse_expression(expr, 0);
-                    if (last_expr_is_double) strcpy(inferred_type, "double");
-                    else if (last_expr_is_float) strcpy(inferred_type, "float");
+                    if (last_expr_is_float) strcpy(inferred_type, "float");
                     
                     if (is_slice) {
-                        if (!is_declared(name)) { add_symbol(name, "int[]"); codegen_write("int %s[100];", name); codegen_newline(); codegen_indent_internal(); }
-                        codegen_write("int %s_len = %s - (%s);", name, slice_end, slice_start);
+                        if (!is_declared(name)) { add_symbol(name, "int[]"); codegen_write("PythonList %s;", name); codegen_newline(); codegen_indent_internal(); }
+                        codegen_write("%s.len = %s - (%s);", name, slice_end, slice_start);
                         codegen_newline(); codegen_indent_internal();
-                        codegen_write("for (int i = 0; i < %s_len; i++) { %s[i] = %s[(%s) + i]; }", name, name, slice_arr, slice_start);
+                        codegen_write("for (int i = 0; i < %s.len; i++) { %s.data[i] = %s.data[(%s) + i]; }", name, name, slice_arr, slice_start);
+                    } else if (strcmp(inferred_type, "int[]") == 0) {
+                        if (!is_declared(name)) { codegen_write("PythonList %s = %s;", name, expr); add_symbol(name, "int[]"); }
+                        else codegen_write("%s = %s;", name, expr);
                     } else if (strcmp(inferred_type, "char*") == 0) {
                         int str_len_val = strlen(expr) > 2 ? strlen(expr) - 2 : 0;
                         if (!is_declared(name)) {
@@ -565,6 +718,11 @@ static void parse_block() {
     codegen_newline();
 }
 
+static void parse_block() {
+    match(TOKEN_COLON);
+    parse_block_internal();
+}
+
 static void parse_statement() {
     if (current_token.type == TOKEN_NEWLINE) { advance_token(); return; }
     
@@ -578,18 +736,9 @@ static void parse_statement() {
         if (strcmp(current_token.text, "def") == 0) {
             match(TOKEN_KEYWORD);
             char name[64]; strcpy(name, current_token.text); match(TOKEN_IDENTIFIER);
+            strcpy(current_func_name, name);
             match(TOKEN_LPAREN);
-            // Determine return type based on parameter types (double > float > int, or void)
-            const char *ret_type;
-            if (func_has_return(name)) {
-                if (func_has_double_param(name)) ret_type = "double";
-                else if (func_has_float_param(name)) ret_type = "float";
-                else ret_type = "int";
-            } else {
-                ret_type = "void";
-            }
-            codegen_write("%s %s(", ret_type, name);
-            int param_idx = 0;
+            codegen_write("int %s(", name);
             while (current_token.type != TOKEN_RPAREN) {
                 const char *param_type = get_func_param_type(name, param_idx);
                 codegen_write("%s %s", param_type, current_token.text);
@@ -603,15 +752,57 @@ static void parse_statement() {
             codegen_write(")");
             parse_block();
         } else if (strcmp(current_token.text, "print") == 0) {
-            if (!main_started) { codegen_write("int main() {"); codegen_newline(); main_started = 1; current_indent++; codegen_indent_internal(); }
+            match(TOKEN_KEYWORD);
+            if (!main_started) { codegen_write("int main() {"); codegen_newline(); main_started = 1; current_indent++; }
             parse_print(); codegen_newline();
         } else if (strcmp(current_token.text, "if") == 0) {
-            if (!main_started) { codegen_write("int main() {"); codegen_newline(); main_started = 1; current_indent++; codegen_indent_internal(); }
             match(TOKEN_KEYWORD);
-            codegen_write("if (");
-            char cond[128] = {0}; parse_expression(cond, 0);
-            codegen_write("%s)", cond);
+            if (strcmp(current_token.text, "__name__") == 0) {
+                // if __name__ == "__main__": 
+                while (current_token.type != TOKEN_COLON) advance_token();
+                match(TOKEN_COLON);
+                match(TOKEN_NEWLINE);
+                match(TOKEN_INDENT);
+                if (strcmp(current_token.text, "main") == 0) {
+                    // skip redundant main() call
+                    while (current_token.type != TOKEN_DEDENT && current_token.type != TOKEN_EOF) advance_token();
+                    if (current_token.type == TOKEN_DEDENT) advance_token();
+                    codegen_write("// Redundant entry point skipped");
+                } else {
+                    codegen_write("// Entry point logic");
+                    parse_block_internal(); // manual block parsing without matching colon
+                }
+            } else {
+                if (!main_started) { codegen_write("int main() {"); codegen_newline(); main_started = 1; current_indent++; }
+                codegen_write("if (");
+                char cond[128] = {0}; parse_expression(cond, 0);
+                const char *type = get_symbol_type(cond);
+                if (strstr(type, "[]")) {
+                    codegen_write("%s.len > 0)", cond);
+                } else {
+                    codegen_write("%s)", cond);
+                }
+                parse_block();
+            }
+        } else if (strcmp(current_token.text, "try") == 0) {
+            match(TOKEN_KEYWORD);
+            codegen_write("// try block start");
             parse_block();
+        } else if (strcmp(current_token.text, "except") == 0) {
+            match(TOKEN_KEYWORD);
+            while (current_token.type != TOKEN_COLON) advance_token();
+            match(TOKEN_COLON); // We consume it here for except because we skip the block
+            // Ignore the block
+            match(TOKEN_NEWLINE);
+            match(TOKEN_INDENT);
+            int depth = 1;
+            while (depth > 0) {
+                if (current_token.type == TOKEN_INDENT) depth++;
+                else if (current_token.type == TOKEN_DEDENT) depth--;
+                else if (current_token.type == TOKEN_EOF) break;
+                advance_token();
+            }
+            codegen_write("// except block skipped");
         } else if (strcmp(current_token.text, "elif") == 0) {
             match(TOKEN_KEYWORD);
             codegen_write("else if (");
@@ -623,14 +814,14 @@ static void parse_statement() {
             codegen_write("else");
             parse_block();
         } else if (strcmp(current_token.text, "while") == 0) {
-            if (!main_started) { codegen_write("int main() {"); codegen_newline(); main_started = 1; current_indent++; codegen_indent_internal(); }
+            if (!main_started) { codegen_write("int main() {"); codegen_newline(); main_started = 1; current_indent++; }
             match(TOKEN_KEYWORD);
             codegen_write("while (");
             char cond[128] = {0}; parse_expression(cond, 0);
             codegen_write("%s)", cond);
             parse_block();
         } else if (strcmp(current_token.text, "for") == 0) {
-            if (!main_started) { codegen_write("int main() {"); codegen_newline(); main_started = 1; current_indent++; codegen_indent_internal(); }
+            if (!main_started) { codegen_write("int main() {"); codegen_newline(); main_started = 1; current_indent++; }
             match(TOKEN_KEYWORD);
             char var[64]; strcpy(var, current_token.text); advance_token();
             match(TOKEN_KEYWORD); match(TOKEN_KEYWORD);
@@ -647,56 +838,48 @@ static void parse_statement() {
             parse_block();
         } else { advance_token(); }
     } else if (current_token.type == TOKEN_IDENTIFIER) {
-        if (!main_started) { codegen_write("int main() {"); codegen_newline(); main_started = 1; current_indent++; codegen_indent_internal(); }
+        if (!main_started) { codegen_write("int main() {"); codegen_newline(); main_started = 1; current_indent++; }
         char name[64]; strcpy(name, current_token.text); advance_token();
         if (current_token.type == TOKEN_ASSIGN) {
             match(TOKEN_ASSIGN);
             if (current_token.type == TOKEN_KEYWORD && (strcmp(current_token.text, "int") == 0 || strcmp(current_token.text, "input") == 0)) {
-                if (!is_declared(name)) { codegen_write("int %s; ", name); add_symbol(name, "int"); }
+                // Scoping fix: always declare input target in main to avoid collisions
+                codegen_write_raw("    int ");
+                codegen_write_raw(name);
+                codegen_write_raw(";");
+                codegen_newline();
+                add_symbol(name, "int"); 
                 parse_input(name);
+                while (current_token.type == TOKEN_RPAREN) advance_token();
+
             } else if (current_token.type == TOKEN_LBRACKET) {
                 match(TOKEN_LBRACKET);
-                if (!is_declared(name)) { codegen_write("int %s[100] = {", name); add_symbol(name, "int[]"); }
-                else codegen_write("%s = {", name);
+                if (!is_declared(name)) { codegen_write("PythonList %s; ", name); add_symbol(name, "int[]"); codegen_newline(); codegen_indent_internal(); }
                 int elem_count = 0;
                 while (current_token.type != TOKEN_RBRACKET) {
-                    codegen_write("%s", current_token.text); advance_token();
+                    codegen_write("%s.data[%d] = %s; ", name, elem_count, current_token.text); 
+                    advance_token();
                     elem_count++;
-                    if (current_token.type == TOKEN_COMMA) { advance_token(); codegen_write(", "); }
+                    if (current_token.type == TOKEN_COMMA) { advance_token(); }
                 }
                 match(TOKEN_RBRACKET); 
-                codegen_write("};");
-                codegen_newline();
-                codegen_indent_internal();
-                codegen_write("int %s_len = %d;", name, elem_count);
+                codegen_write("%s.len = %d;", name, elem_count);
             } else {
-                char inferred_type[32] = "int";
-                if (current_token.type == TOKEN_STRING) {
-                    if (current_token.text[0] == '\'') strcpy(inferred_type, "char");
-                    else strcpy(inferred_type, "char*");
-                }
-                else if (current_token.type == TOKEN_NUMBER && strchr(current_token.text, '.')) strcpy(inferred_type, "float");
-                else if (current_token.type == TOKEN_IDENTIFIER && strcmp(current_token.text, "chr") == 0) strcpy(inferred_type, "char");
-                
                 is_slice = 0;
                 char expr[128] = {0}; parse_expression(expr, 0);
-                if (last_expr_is_double) strcpy(inferred_type, "double");
-                else if (last_expr_is_float) strcpy(inferred_type, "float");
                 
                 if (is_slice) {
-                    if (!is_declared(name)) { add_symbol(name, "int[]"); codegen_write("int %s[100];", name); codegen_newline(); codegen_indent_internal(); }
-                    codegen_write("int %s_len = %s - (%s);", name, slice_end, slice_start);
+                    if (!is_declared(name)) { add_symbol(name, "int[]"); codegen_write("PythonList %s;", name); codegen_newline(); codegen_indent_internal(); }
+                    codegen_write("%s.len = %s - (%s);", name, slice_end, slice_start);
                     codegen_newline(); codegen_indent_internal();
-                    codegen_write("for (int i = 0; i < %s_len; i++) { %s[i] = %s[(%s) + i]; }", name, name, slice_arr, slice_start);
+                    codegen_write("for (int i = 0; i < %s.len; i++) { %s.data[i] = %s.data[(%s) + i]; }", name, name, slice_arr, slice_start);
+                } else if (strcmp(inferred_type, "int[]") == 0) {
+                    if (!is_declared(name)) { codegen_write("PythonList %s = %s;", name, expr); add_symbol(name, "int[]"); }
+                    else codegen_write("%s = %s;", name, expr);
                 } else if (strcmp(inferred_type, "char*") == 0) {
                     int str_len_val = strlen(expr) > 2 ? strlen(expr) - 2 : 0;
-                    if (!is_declared(name)) {
-                        codegen_write("%s %s = %s;", inferred_type, name, expr); add_symbol(name, inferred_type);
-                        if (needs_len_var(name)) { codegen_newline(); codegen_indent_internal(); codegen_write("int %s_len = %d;", name, str_len_val); }
-                    } else {
-                        if (needs_len_var(name)) codegen_write("%s = %s; %s_len = %d;", name, expr, name, str_len_val);
-                        else codegen_write("%s = %s;", name, expr);
-                    }
+                    if (!is_declared(name)) { codegen_write("%s %s = %s;", inferred_type, name, expr); add_symbol(name, inferred_type); codegen_newline(); codegen_indent_internal(); codegen_write("int %s_len = %d;", name, str_len_val); }
+                    else codegen_write("%s = %s; %s_len = %d;", name, expr, name, str_len_val);
                 } else {
                     if (!is_declared(name)) { codegen_write("%s %s = %s;", inferred_type, name, expr); add_symbol(name, inferred_type); }
                     else codegen_write("%s = %s;", name, expr);
