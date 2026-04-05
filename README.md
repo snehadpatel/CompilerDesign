@@ -89,4 +89,3 @@ bash run_ui.sh
 
 **Course:** Compiler Design Laboratory  
 **Scope:** Python-to-C Transpilation System  
-**Developed by:** Sneha Patel
