@@ -5,12 +5,28 @@ def run_compiler(code, filename):
     """
     Bridge function to invoke the C-based py2c transpiler.
     1. Writes code to a temporary file.
-    2. Runs ./py2c.
+    2. Runs ./py2c (builds if needed).
     3. Reads and returns the generated C code.
     """
+    # Get the project root directory (parent of ui/)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    os.chdir(project_root)
+
     # Ensure py2c is built
     if not os.path.exists("./py2c"):
-        return "Error: py2c binary not found. Please run 'make' first.", None
+        # Try to build it
+        build_result = subprocess.run(
+            ["make"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        if build_result.returncode != 0:
+            return f"Error: Failed to build py2c binary.\n{build_result.stdout}\n{build_result.stderr}", None
+
+    # Ensure outputs directory exists
+    os.makedirs("outputs", exist_ok=True)
 
     # Write input to a temp file
     temp_py = f"ui/{filename}.py"
