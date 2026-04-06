@@ -1,0 +1,1 @@
+{'n': {'type': 'variable', 'value': None, 'datatype': 'int'}, 'int': {'type': 'variable', 'value': None}, 'input': {'type': 'variable', 'value': None}, 'i': {'type': 'variable', 'value': None, 'datatype': 'int'}, 'print': {'type': 'variable', 'value': None}}
