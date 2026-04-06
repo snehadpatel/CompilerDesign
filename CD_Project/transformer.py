@@ -40,19 +40,12 @@ def transform_to_c(lines, symbol_table):
     var_types = {}
 
     def add_line(content, is_statement=True):
-        # Prepend indentation based on stack level (excluding the root stack which is 0)
-        # Note: indent_stack has [0, 4, 8, ...]
-        # We want (len(indent_stack) - 1) * 4 spaces
-        level = len(indent_stack) - (1 if not is_statement else 0)
-        if level < 0: level = 0
-        
-        # Don't double-indent in functions if we're in the main_code block
-        # Actually, let's just use the current stack level
+        # Prepend indentation based on stack level
         spaces = "    " * (len(indent_stack) - 1)
         
-        # If it's a statement, ensure it ends with semicolon unless it's a block opener or comment
+        # If it's a statement, ensure it ends with exactly one semicolon
         if is_statement and content and not content.endswith(("{", "}", "//")):
-            if not content.startswith("//"):
+            if not content.startswith("//") and not content.endswith(";"):
                 content += ";"
         
         if inside_function:
@@ -80,13 +73,12 @@ def transform_to_c(lines, symbol_table):
             if len(indent_stack) == 1:
                 inside_function = False
 
-        # 3. Ignore specific Python constructs
-        if stripped.startswith(("try:", "except ", "except:", 'if __name__ == "__main__":')):
-            # We treat these as transparent blocks (don't indent, just process body at current level)
+        # 3. Ignore specific Python constructs (STRICT REGEX)
+        if re.match(r'^(try:|except\b|if\s+__name__\s*==\s*["\']__main__["\']:)', stripped):
             continue
         
-        if "__main__" in stripped and "main()" in stripped and not stripped.startswith("def"):
-            # Skip the caller of main if it's inside if __name__
+        # Skip calls to main() if it was defined as def main()
+        if main_defined and re.match(r'^(main\s*\(.*\))$', stripped):
             continue
 
         # 4. FUNCTION DEFINITION
@@ -109,37 +101,38 @@ def transform_to_c(lines, symbol_table):
                 var_types[name] = "int" # Default return type
                 add_line(f"int {name}({', '.join(param_list)}) {{", is_statement=False)
             
-            indent_stack.append(raw_indent + 4) # This is a guestimate of next level
+            indent_stack.append(raw_indent + 4)
 
         # 5. RETURN
         elif stripped.startswith("return"):
             ret_val = stripped.replace("return", "").replace("[", "{").replace("]", "}").strip()
             if not ret_val: 
                 add_line("return")
+            elif "{" in ret_val:
+                add_line(f"// return {ret_val} (List return not fully supported)")
+                add_line("return 0")
             else:
-                # Basic list placeholder for user
-                if "{" in ret_val:
-                    add_line(f"// return {ret_val} (List return not fully supported)")
-                    add_line("return 0")
-                else:
-                    add_line(f"return {ret_val}")
+                add_line(f"return {ret_val}")
 
-        # 6. INPUT
+        # 6. INPUT (STRICT)
         elif "input(" in stripped:
-            var = stripped.split("=")[0].strip()
-            if "int(input" in stripped:
-                var_types[var] = "int"
-                add_line(f"int {var}")
-                add_line(f'scanf("%d", &{var})')
-            else:
-                var_types[var] = "float"
-                add_line(f"float {var}")
-                add_line(f'scanf("%f", &{var})')
+            match = re.match(r"^(\w+)\s*=\s*(.*input\(.*\))$", stripped)
+            if match:
+                var = match.group(1)
+                expr = match.group(2)
+                if "int(input" in expr:
+                    var_types[var] = "int"
+                    add_line(f"int {var}")
+                    add_line(f'scanf("%d", &{var})')
+                else:
+                    var_types[var] = "float"
+                    add_line(f"float {var}")
+                    add_line(f'scanf("%f", &{var})')
+            continue
 
-        # 7. PRINT
-        elif stripped.startswith("print"):
-            content = stripped.replace("print(", "").rstrip(")")
-            # Handle comments inside print if any (rare)
+        # 7. PRINT (STRICT REGEX) - Do not match printf
+        elif re.match(r"^print\s*\(", stripped):
+            content = stripped.replace("print(", "", 1).rstrip(")")
             if "#" in content: content = content.split("#")[0].strip()
 
             if content.startswith("f"):
@@ -150,9 +143,8 @@ def transform_to_c(lines, symbol_table):
                 for v in variables:
                     v = v.strip()
                     v_type = var_types.get(v, "int" if v.isdigit() else "float")
-                    if v_type == "int": specifiers.append("%d")
-                    elif v_type == "char*": specifiers.append("%s")
-                    else: specifiers.append("%f")
+                    spec = "%d" if v_type == "int" else ("%s" if v_type == "char*" else "%f")
+                    specifiers.append(spec)
                 
                 format_str = content
                 for spec in specifiers:
@@ -170,16 +162,16 @@ def transform_to_c(lines, symbol_table):
                     spec = "%d" if v_type == "int" else "%f"
                     add_line(f'printf("{spec}\\n", {content})')
 
-        # 8. WHILE / IF / ELIF / ELSE
-        elif stripped.startswith(("while ", "if ", "elif ", "else")):
+        # 8. WHILE / IF / ELIF / ELSE (STRICT REGEX)
+        elif re.match(r"^(while|if|elif|else)\b", stripped):
             if stripped.startswith("while "):
-                cond = stripped.replace("while", "").replace(":", "").strip()
+                cond = stripped.replace("while", "", 1).replace(":", "").strip()
                 add_line(f"while({cond}) {{", is_statement=False)
             elif stripped.startswith("if "):
-                cond = stripped.replace("if", "").replace(":", "").strip()
+                cond = stripped.replace("if", "", 1).replace(":", "").strip()
                 add_line(f"if({cond}) {{", is_statement=False)
             elif stripped.startswith("elif "):
-                cond = stripped.replace("elif", "").replace(":", "").strip()
+                cond = stripped.replace("elif", "", 1).replace(":", "").strip()
                 add_line(f"else if({cond}) {{", is_statement=False)
             else:
                 add_line("else {", is_statement=False)
@@ -196,36 +188,37 @@ def transform_to_c(lines, symbol_table):
             else:
                 add_line(f"// for {stripped} (Complex loops not supported)")
 
-        # 10. ASSIGNMENTS
-        elif "=" in stripped:
-            if "+=" in stripped: op = "+="
-            elif "-=" in stripped: op = "-="
-            elif "*=" in stripped: op = "*="
-            elif "/=" in stripped: op = "/="
-            elif "%=" in stripped: op = "%="
-            else: op = "="
+        # 10. ASSIGNMENTS (STRICT REGEX)
+        else:
+            assign_match = re.match(r"^([a-zA-Z_]\w*)\s*([+\-*/%]?=)\s*(.*)$", stripped)
+            if assign_match:
+                var = assign_match.group(1)
+                op = assign_match.group(2)
+                expr = assign_match.group(3)
 
-            parts = stripped.split(op)
-            var = parts[0].strip()
-            expr = parts[1].strip()
+                if "**" in expr:
+                    include_math = True
+                    base, pwr = expr.split("**")
+                    expr = f"pow({base.strip()}, {pwr.strip()})"
+                    var_types[var] = "float"
 
-            if "**" in expr:
-                include_math = True
-                base, pwr = expr.split("**")
-                expr = f"pow({base.strip()}, {pwr.strip()})"
-                var_types[var] = "float"
+                if "[" in expr and "for" in expr:
+                    add_line(f"// {var} {op} {expr} (Comprehensions not supported)")
+                    continue
+                
+                if var not in var_types and op == "=":
+                    v_type = get_c_type(expr, var_types)
+                    var_types[var] = v_type
+                    add_line(f"{v_type} {var} = {expr}")
+                else:
+                    add_line(f"{var} {op} {expr}")
 
-            # Check for list comprehensions (simple case)
-            if "[" in expr and "for" in expr:
-                add_line(f"// {var} {op} {expr} (Comprehensions not supported)")
-                continue
-            
-            if var not in var_types and op == "=":
-                v_type = get_c_type(expr, var_types)
-                var_types[var] = v_type
-                add_line(f"{v_type} {var} = {expr}")
-            else:
-                add_line(f"{var} {op} {expr}")
+    # Close remaining blocks
+    while len(indent_stack) > 1:
+        indent_stack.pop()
+        add_line("}", is_statement=False)
+
+    return functions, main_code, include_math, main_defined
 
     # Close remaining blocks
     while len(indent_stack) > 1:
