@@ -87,5 +87,45 @@ bash run_ui.sh
 
 ---
 
+## 💻 Commands by OS
+
+### macOS (and Linux)
+Build:
+```bash
+make
+```
+Run CLI:
+```bash
+./py2c tests/test_simple.py
+```
+Run Web UI:
+```bash
+bash run_ui.sh
+```
+Run tests:
+```bash
+bash rerun_all_tests.sh
+```
+
+### Windows
+Build (MinGW or MSYS2):
+```bat
+mingw32-make
+```
+Run CLI:
+```bat
+py2c.exe tests\test_simple.py
+```
+Run Web UI:
+```bat
+python -m streamlit run ui\app.py
+```
+Run tests:
+```bat
+python -m pytest tests
+```
+
+---
+
 **Course:** Compiler Design Laboratory  
 **Scope:** Python-to-C Transpilation System  
