@@ -32,12 +32,15 @@ if uploaded_file is not None:
     st.session_state.code = file_content
     st.session_state.filename = uploaded_file.name.split(".")[0]
 
-# Text editor (NOW SYNCS CORRECTLY)
+# Text area with explicit key for state management
 st.session_state.code = st.text_area(
     "Enter Python Code",
     value=st.session_state.code,
-    height=300
+    height=300,
+    key="python_editor"
 )
+# Keep st.session_state.code updated with the editor's content
+st.session_state.code = st.session_state.python_editor
 
 # Convert button
 if st.button("Convert"):

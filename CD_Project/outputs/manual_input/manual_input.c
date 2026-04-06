@@ -1,20 +1,20 @@
 #include <stdio.h>
 
 
+
 int main() {
-    int n;
-    scanf("%d", &n);
-    float i = 1;
-    while(i <= n) {
-    if(i == 5) {
-    break;
+    int x;
+    scanf("%d", &x);
+    int y;
+    scanf("%d", &y);
+    if(x > y) {
+        printf("%d is greater than %d\n", x, y);
     }
-    if(i % 2 == 0) {
-    i += 1;
-    continue;
+    else if(x < y) {
+        printf("%d is greater than %d\n", y, x);
     }
-    printf("%d\n", i);
-    i += 1;
+    else {
+        printf("%s\n", "Numbers are equal");
     }
     return 0;
 }
