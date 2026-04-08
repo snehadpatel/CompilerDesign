@@ -1,6 +1,0 @@
-name = input("Enter name: ")
-age = int(input("Enter age: "))
-height = float(input("Enter height: "))
-print("Name:", name)
-print("Age:", age)
-print("Height:", height)

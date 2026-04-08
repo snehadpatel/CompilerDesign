@@ -4,6 +4,9 @@ def get_c_type(value, var_types={}):
     value = value.strip()
     # String literal
     if value.startswith('"') or value.startswith("'"):
+        # Check if it's a single character in single quotes (char literal)
+        if value.startswith("'") and len(value) == 3 and value[2] == "'":
+            return "char"
         return "char*"
     
     # Known variable
@@ -23,6 +26,10 @@ def get_c_type(value, var_types={}):
             return var_types[func_name]
         # Specific function return types
         if func_name == "len":
+            return "int"
+        elif func_name == "ord":
+            return "int"
+        elif func_name == "chr":
             return "int"
         return "float"
 
@@ -210,8 +217,28 @@ def transform_to_c(lines, symbol_table):
                     expr = f"pow({base.strip()}, {pwr.strip()})"
                     var_types[var] = "float"
 
+                # Boolean value conversion
+                if expr == "True":
+                    expr = "1"
+                    var_types[var] = "int"
+                elif expr == "False":
+                    expr = "0"
+                    var_types[var] = "int"
+
                 if "[" in expr and "for" in expr:
                     add_line(f"// {var} {op} {expr} (Comprehensions not supported)")
+                    continue
+                
+                # Handle list initialization
+                if expr.startswith("[") and expr.endswith("]"):
+                    # Simple list like [1, 2, 3]
+                    list_content = expr[1:-1].strip()
+                    if list_content:
+                        add_line(f"int {var}[] = {{{list_content}}};")
+                        var_types[var] = "int[]"
+                    else:
+                        add_line(f"int {var}[0] = {{}};")
+                        var_types[var] = "int[]"
                     continue
                 
                 if var not in var_types and op == "=":
