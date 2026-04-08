@@ -21,6 +21,9 @@ def get_c_type(value, var_types={}):
         func_name = func_match.group(1)
         if func_name in var_types:
             return var_types[func_name]
+        # Specific function return types
+        if func_name == "len":
+            return "int"
         return "float"
 
     # Check variables in the expression
@@ -124,10 +127,14 @@ def transform_to_c(lines, symbol_table):
                     var_types[var] = "int"
                     add_line(f"int {var}")
                     add_line(f'scanf("%d", &{var})')
-                else:
+                elif "float(input" in expr:
                     var_types[var] = "float"
                     add_line(f"float {var}")
                     add_line(f'scanf("%f", &{var})')
+                else:
+                    var_types[var] = "char*"
+                    add_line(f"char {var}[100]")
+                    add_line(f'scanf("%99s", {var})')
             continue
 
         # 7. PRINT (STRICT REGEX) - Do not match printf
@@ -154,12 +161,13 @@ def transform_to_c(lines, symbol_table):
             else:
                 content = content.strip()
                 if content.startswith('"') or content.startswith("'"):
-                    add_line(f'printf("%s\\n", {content})')
+                    add_line(f'printf({content})')
+                    add_line(f'printf("\\n")')
                 elif "[" in content:
                     add_line(f'// printf("%s", {content}) (List print not fully supported)')
                 else:
                     v_type = var_types.get(content, get_c_type(content, var_types))
-                    spec = "%d" if v_type == "int" else "%f"
+                    spec = "%d" if v_type == "int" else ("%s" if v_type == "char*" else "%f")
                     add_line(f'printf("{spec}\\n", {content})')
 
         # 8. WHILE / IF / ELIF / ELSE (STRICT REGEX)
@@ -225,4 +233,4 @@ def transform_to_c(lines, symbol_table):
         indent_stack.pop()
         add_line("}", is_statement=False)
 
-    return functions, main_code, include_math, main_defined
+    return functions, main_code, include_math, main_defined

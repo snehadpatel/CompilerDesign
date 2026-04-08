@@ -139,6 +139,7 @@ void parser_init() {
     current_indent = 0;
     is_slice = 0;
     last_expr_is_float = 0;
+    current_token = (Token){TOKEN_EOF, "", 0, 0};
 }
 
 static void add_symbol(const char *name, const char *type) {
@@ -186,11 +187,9 @@ static void codegen_indent_internal() {
 }
 
 static void parse_print() {
-    match(TOKEN_KEYWORD); // print
     match(TOKEN_LPAREN);
     
     char expr[256] = {0};
-    while (current_token.type == TOKEN_LPAREN) advance_token(); // skip (
     
     if (current_token.type == TOKEN_STRING) {
         char full_expr[256];
